@@ -17,6 +17,12 @@
         <div class="card-header">
           <span class="title">用户管理</span>
           <div class="header-actions">
+            <el-select v-model="type" placeholder="类型" clearable style="width: 140px" @change="handleSearch">
+              <el-option label="全部" :value="null" />
+              <el-option label="真人" :value="0" />
+              <el-option label="打牌机器人" :value="1" />
+              <el-option label="围观机器人" :value="2" />
+            </el-select>
             <el-input
               v-model="keyword"
               placeholder="搜索手机号/用户名/编号"
@@ -74,10 +80,11 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="机器人" width="70" align="center">
+        <el-table-column label="类型" width="100" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.isRobot === 1" type="warning" size="small">机器人</el-tag>
-            <span v-else>-</span>
+            <el-tag v-if="row.isRobot === 1" type="warning" size="small">打牌机器人</el-tag>
+            <el-tag v-else-if="row.isRobot === 2" type="info" size="small">围观机器人</el-tag>
+            <el-tag v-else type="success" size="small">真人</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="注册时间" width="160">
@@ -279,6 +286,7 @@ import { getUserList, adjustGameScore, adjustDiamond, resetUserPassword, getScor
 const loading = ref(false)
 const userList = ref([])
 const keyword = ref('')
+const type = ref(null)  // 用户类型筛选：null=全部 0=真人 1=打牌机器人 2=围观机器人
 const page = ref(1)
 const pageSize = ref(20)
 const totalCount = ref(0)
@@ -301,7 +309,8 @@ async function loadUsers() {
     const res = await getUserList({
       page: page.value,
       pageSize: pageSize.value,
-      keyword: keyword.value || undefined
+      keyword: keyword.value || undefined,
+      type: type.value != null ? type.value : undefined
     })
     if (res.code === 200) {
       userList.value = res.data.content || []
@@ -323,6 +332,7 @@ function handleSearch() {
 
 function handleReset() {
   keyword.value = ''
+  type.value = null
   page.value = 1
   loadUsers()
 }

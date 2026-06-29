@@ -327,6 +327,17 @@ export function uploadImage(file) {
   })
 }
 
+export function uploadAvatar(file) {
+  // 头像上传：服务端按需压缩（>200KB 缩放并压到 ≤100KB，256px）
+  const form = new FormData()
+  form.append('file', file)
+  return request.post('/admin/upload/file', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    params: { compress: true, thresholdKb: 200, maxDim: 256, maxKb: 100 },
+    timeout: 30000
+  })
+}
+
 // ---- 大联盟俱乐部（type=3）----
 
 export function getSuperClubList() {
@@ -444,16 +455,23 @@ export function adminGiftDelete(id) {
 // ---- 机器人压测（仅压测用） ----
 
 export function getRobotStatus() {
+  // 全局运行态：robotCount / managedRoomCount / totalRoomCount / anyClubEnabled
   return request.get('/admin/robot/status')
 }
 
-export function updateRobotConfig(data) {
-  // data: { enabled?, activeStartHour?, activeEndHour?, maxHandsPerTable?, minActionDelayMs?, maxActionDelayMs?, autoRefill? }
-  return request.post('/admin/robot/config', data)
+export function getRobotClubConfig(clubId) {
+  // 某俱乐部压测配置（持久化）
+  return request.get('/admin/robot/clubConfig', { params: { clubId } })
 }
 
-export function setRobotEnabled(enabled) {
-  return request.post('/admin/robot/enable', { enabled })
+export function updateRobotConfig(data) {
+  // data: { clubId, enabled?, activeStartHour?, ... rebuyMultiplier? } 落库
+  return request.post('/admin/robot/clubConfig', data)
+}
+
+export function setRobotEnabled(clubId, enabled) {
+  // 某俱乐部压测开关（落库）
+  return request.post('/admin/robot/enable', { clubId, enabled })
 }
 
 export function reloadRobotIds() {
@@ -462,6 +480,16 @@ export function reloadRobotIds() {
 
 export function listClubRobots(clubId) {
   return request.get('/admin/robot/list', { params: { clubId } })
+}
+
+export function listClubRobotsPaged(params) {
+  // params: { clubId, page=0, size=20 }
+  return request.get('/admin/robot/listPaged', { params })
+}
+
+export function listRobotClubs(params) {
+  // params: { keyword?, page=0, size=20 }
+  return request.get('/admin/robot/clubs', { params })
 }
 
 export function searchRobotClubs(keyword) {
@@ -498,8 +526,65 @@ export function robotBatchCreate(data) {
   return request.post('/admin/robot/batchCreate', data)
 }
 
-export function robotStopAll() {
-  return request.post('/admin/robot/stopAll')
+export function robotStopAll(clubId) {
+  // clubId 为空=停所有俱乐部；指定=只停该俱乐部
+  return request.post('/admin/robot/stopAll', clubId ? { clubId } : {})
+}
+
+export function robotRandomAvatars(data) {
+  // data: { clubId, urls: [url...], userIds? }  先上传本地图片拿到 urls 再调用
+  return request.post('/admin/robot/randomAvatars', data)
+}
+
+export function robotRandomNames(data) {
+  // data: { clubId, userIds? }
+  return request.post('/admin/robot/randomNames', data)
+}
+
+export function getRobotProfitStatus(roomId) {
+  return request.get('/admin/robot/profit/status', { params: { roomId } })
+}
+
+export function setRobotProfitRoom(data) {
+  // data: { roomId, enabled, mode, targetProfit, targetProfitRate, perHandCap, adjustStrength, resetLedger? }
+  return request.post('/admin/robot/profit/room', data)
+}
+
+export function setRobotProfitClub(data) {
+  // data: { clubId, enabled, mode, targetProfit, targetProfitRate, perHandCap, adjustStrength, resetLedger? }
+  return request.post('/admin/robot/profit/club', data)
+}
+
+// ---- 围观机器人（造假围观，仅观战不打牌；is_robot=2） ----
+
+export function generateClubViewers(data) {
+  // data: { clubId, count, password?, avatar?, avatars?, nickMinLen?, nickMaxLen? }
+  return request.post('/admin/robot/viewers/generate', data)
+}
+
+export function listClubViewers(params) {
+  // params: { clubId, page, size }
+  return request.get('/admin/robot/viewers/list', { params })
+}
+
+export function viewerRandomNames(data) {
+  // data: { clubId, userIds?, nickMinLen?, nickMaxLen? }
+  return request.post('/admin/robot/viewers/randomNames', data)
+}
+
+export function viewerRandomAvatars(data) {
+  // data: { clubId, urls, userIds? }
+  return request.post('/admin/robot/viewers/randomAvatars', data)
+}
+
+export function addRobotViewers(data) {
+  // data: { roomId, count }
+  return request.post('/admin/robot/viewers/add', data)
+}
+
+export function clearRobotViewers(data) {
+  // data: { roomId }
+  return request.post('/admin/robot/viewers/clear', data)
 }
 
 // ---- 服务器日志下载 / 清理 ----
