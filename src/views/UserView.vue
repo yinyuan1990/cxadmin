@@ -102,6 +102,7 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="adjustScore">调积分</el-dropdown-item>
                   <el-dropdown-item command="adjustDiamond">调钻石</el-dropdown-item>
+                  <el-dropdown-item command="updateAvatar">修改头像</el-dropdown-item>
                   <el-dropdown-item command="resetPassword" divided>修改密码</el-dropdown-item>
                   <el-dropdown-item command="scoreLog">积分变动</el-dropdown-item>
                   <el-dropdown-item command="diamondLog">钻石变动</el-dropdown-item>
@@ -214,6 +215,45 @@
       </template>
     </el-dialog>
 
+    <!-- 修改头像弹窗 -->
+    <el-dialog
+      v-model="avatarVisible"
+      title="修改用户头像"
+      width="440px"
+      destroy-on-close
+    >
+      <el-form :model="avatarForm" label-width="80px">
+        <el-form-item label="用户">
+          <span>{{ avatarForm.username }}（ID: {{ avatarForm.userId }}）</span>
+        </el-form-item>
+        <el-form-item label="当前头像">
+          <el-avatar :size="56" :src="avatarForm.avatar" v-if="avatarForm.avatar">
+            <el-icon><User /></el-icon>
+          </el-avatar>
+          <el-avatar :size="56" v-else><el-icon><User /></el-icon></el-avatar>
+        </el-form-item>
+        <el-form-item label="上传图片">
+          <el-upload
+            :show-file-list="false"
+            :http-request="doUploadAvatar"
+            accept="image/*"
+          >
+            <el-button type="primary" :loading="avatarUploading">选择本地图片上传</el-button>
+          </el-upload>
+          <div class="adjust-hint">上传后自动压缩；也可直接在下方填头像URL</div>
+        </el-form-item>
+        <el-form-item label="头像URL">
+          <el-input v-model="avatarForm.avatar" placeholder="头像图片URL" clearable />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="avatarVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingAvatar" :disabled="!avatarForm.avatar" @click="handleSaveAvatar">
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 变动日志弹窗 -->
     <el-dialog
       v-model="logVisible"
@@ -281,7 +321,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, User, ArrowDown } from '@element-plus/icons-vue'
-import { getUserList, adjustGameScore, adjustDiamond, resetUserPassword, getScoreLog, getDiamondLog } from '../api/index'
+import { getUserList, adjustGameScore, adjustDiamond, resetUserPassword, getScoreLog, getDiamondLog, updateUserAvatar, uploadAvatar } from '../api/index'
 
 const loading = ref(false)
 const userList = ref([])
@@ -356,9 +396,58 @@ function handleCommand(cmd, row) {
   switch (cmd) {
     case 'adjustScore':  openAdjust(row, 'gameScore'); break
     case 'adjustDiamond': openAdjust(row, 'diamond'); break
+    case 'updateAvatar': openAvatar(row); break
     case 'resetPassword': openResetPassword(row); break
     case 'scoreLog':     openLog(row, 'score'); break
     case 'diamondLog':   openLog(row, 'diamond'); break
+  }
+}
+
+// 修改头像
+const avatarVisible = ref(false)
+const savingAvatar = ref(false)
+const avatarUploading = ref(false)
+const avatarForm = ref({ userId: null, username: '', avatar: '' })
+
+function openAvatar(row) {
+  avatarForm.value = { userId: row.id, username: row.username, avatar: row.avatar || '' }
+  avatarVisible.value = true
+}
+
+async function doUploadAvatar(option) {
+  avatarUploading.value = true
+  try {
+    const res = await uploadAvatar(option.file)
+    if (res.code === 200 && res.data) {
+      avatarForm.value.avatar = res.data
+      ElMessage.success('上传成功')
+    } else {
+      ElMessage.error(res.message || '上传失败')
+    }
+  } catch {
+    ElMessage.error('上传失败')
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
+async function handleSaveAvatar() {
+  const { userId, avatar } = avatarForm.value
+  if (!avatar) { ElMessage.warning('请先上传图片或填写头像URL'); return }
+  savingAvatar.value = true
+  try {
+    const res = await updateUserAvatar(userId, avatar)
+    if (res.code === 200) {
+      ElMessage.success('头像修改成功')
+      avatarVisible.value = false
+      await loadUsers()
+    } else {
+      ElMessage.error(res.message || '操作失败')
+    }
+  } catch {
+    // 拦截器已处理
+  } finally {
+    savingAvatar.value = false
   }
 }
 

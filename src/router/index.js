@@ -75,7 +75,7 @@ const routes = [
         path: 'robot',
         name: 'Robot',
         component: () => import('../views/RobotView.vue'),
-        meta: { title: '机器人压测' }
+        meta: { title: '俱乐部管理' }
       },
       {
         path: 'system-ops',

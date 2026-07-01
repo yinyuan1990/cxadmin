@@ -61,7 +61,7 @@
 
         <el-menu-item index="/robot">
           <el-icon><MagicStick /></el-icon>
-          <span>机器人压测</span>
+          <span>俱乐部管理</span>
         </el-menu-item>
 
         <el-menu-item index="/system-ops">

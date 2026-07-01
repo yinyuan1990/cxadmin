@@ -1,10 +1,11 @@
 <template>
   <div class="robot-page">
     <el-alert type="warning" :closable="false" class="intro">
-      <template #title><strong>机器人压测（仅用于压测，请勿用于线上运营）</strong></template>
+      <template #title><strong>俱乐部管理（机器人压测 / 俱乐部游戏开关，请谨慎用于线上运营）</strong></template>
       <div class="desc-list">
         <p>• 机器人 = user 表 is_robot=1 的真实俱乐部成员；不破坏现有房间逻辑，独立模块接管「机器人」的操作。</p>
         <p>• 流程：俱乐部列表选一个真实俱乐部 → 进入后按页签管理机器人 / 建桌 / 盈利控盘。</p>
+        <p>• 「禁用游戏」开关：打开后该俱乐部新玩家<strong>不能进桌坐下玩游戏</strong>（不影响已经在玩的），用于临时关闭正常游戏功能以测试新功能，完善后手动关掉恢复。</p>
       </div>
     </el-alert>
 
@@ -69,6 +70,18 @@
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.state === 1 ? 'success' : 'danger'">{{ row.state === 1 ? '正常' : '停用' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="禁用游戏" width="150" align="center">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.gameDisabled"
+              active-text="禁止进桌"
+              inactive-text="正常"
+              inline-prompt
+              :loading="row._gdLoading"
+              @change="(val) => toggleGameDisabled(row, val)"
+            />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100" align="center" fixed="right">
@@ -211,6 +224,21 @@
                   </el-form-item>
                 </el-form>
               </el-card>
+
+              <el-card shadow="never" class="op-card">
+                <div class="op-title">服务器文件夹一一分配（自己上传到服务器，校验数量）</div>
+                <el-form label-width="90px">
+                  <el-form-item label="服务器目录">
+                    <el-input v-model="folderAssign.path" placeholder="容器路径 如 /opt/header/robot-src/俱乐部A-打牌-1批" style="width:340px" clearable />
+                  </el-form-item>
+                  <el-form-item>
+                    <el-button type="primary" :loading="folderAssign.loading" @click="handleAssignFromFolder(1)">一一分配给打牌机器人</el-button>
+                  </el-form-item>
+                  <el-form-item>
+                    <span class="hint">图片传到宿主 <code>shared/header/robot-src/…</code>，此处填容器路径 <code>/opt/header/robot-src/…</code>；按文件名顺序一一对应到本俱乐部全部打牌机器人；<b>图片数 ≥ 机器人数即可</b>（多余忽略），不足才报错。复制进CDN目录、URL走静态域名(不暴露IP)。</span>
+                  </el-form-item>
+                </el-form>
+              </el-card>
             </div>
 
             <el-table :data="members" v-loading="memberLoading" stripe border height="360" @selection-change="onSelectionChange">
@@ -253,7 +281,7 @@
           <!-- ===== 围观机器人（造假围观，仅观战不打牌） ===== -->
           <el-tab-pane label="围观机器人" name="viewers">
             <el-alert type="info" :closable="false" style="margin-bottom:12px">
-              <template #title>围观机器人只用于造假围观，不参与打牌（独立身份 is_robot=2）。先在此生成围观池，再到「牌桌列表」对某桌点「加围观」。昵称/头像与打牌机器人同一套逻辑。</template>
+              <template #title>围观机器人只用于造假围观，不参与打牌（独立身份 is_robot=2）。先在此生成围观池，再到「牌桌列表」对某桌点「加围观」。昵称/头像与打牌机器人同一套逻辑。「调围观」=围观机器人不变、只随机换昵称+打乱顺序；程序也会每 5 分钟(viewer_adjust_seconds 可配)自动调一次，避免固定不动穿帮。</template>
             </el-alert>
             <div class="ops-row">
               <el-card shadow="never" class="op-card">
@@ -309,6 +337,14 @@
                   <el-form-item>
                     <el-button type="primary" :loading="vbulkAvatar.uploading" @click="handleViewerBulkAvatars">上传并随机分配</el-button>
                   </el-form-item>
+                  <el-divider content-position="left">服务器文件夹一一分配（自己上传到服务器，校验数量）</el-divider>
+                  <el-form-item label="服务器目录">
+                    <el-input v-model="folderAssign.viewerPath" placeholder="容器路径 如 /opt/header/robot-src/俱乐部A-围观-1批" style="width:340px" clearable />
+                  </el-form-item>
+                  <el-form-item>
+                    <el-button type="primary" :loading="folderAssign.viewerLoading" @click="handleAssignFromFolder(2)">一一分配给围观机器人</el-button>
+                    <span class="hint" style="margin-left:8px">图片数 ≥ 围观机器人数即可（多余忽略），按文件名顺序一一对应；URL走静态域名不暴露IP。</span>
+                  </el-form-item>
                 </el-form>
               </el-card>
             </div>
@@ -346,7 +382,7 @@
             <el-form :inline="true" :model="batch" label-width="90px">
               <el-form-item label="建桌数量"><el-input-number v-model="batch.tableCount" :min="1" :max="2000" /></el-form-item>
               <el-form-item label="每桌机器人">
-                <el-input-number v-model="batch.perTable" :min="5" :max="7" />
+                <el-input-number v-model="batch.perTable" :min="2" :max="8" />
                 <span class="hint">5~7 个</span>
               </el-form-item>
               <el-form-item label="开局人数"><el-input-number v-model="batch.playerCount" :min="2" :max="8" /></el-form-item>
@@ -359,6 +395,10 @@
               <el-form-item label="地九王"><el-switch v-model="batch.diWang" /></el-form-item>
               <el-form-item label="丁二皇吃席"><el-switch v-model="batch.dingErHuangFeast" /></el-form-item>
               <el-form-item label="无分模式"><el-switch v-model="batch.noScore" /></el-form-item>
+              <el-form-item label="GPS">
+                <el-switch v-model="batch.gps" />
+                <span class="hint">与真人建桌接口对齐；机器人不搜索定位，对机器人无影响</span>
+              </el-form-item>
               <el-divider content-position="left">盈利控盘（真人进来时按目标放水/吃分）</el-divider>
               <el-form-item label="开启控盘"><el-switch v-model="batch.profitControlEnabled" /></el-form-item>
               <el-form-item label="目标模式">
@@ -460,6 +500,7 @@
                 <template #default="{ row }">
                   <el-button type="primary" link size="small" @click="openRoomProfit(row)">调控盘</el-button>
                   <el-button type="success" link size="small" @click="openAddViewers(row)">加围观</el-button>
+                  <el-button type="warning" link size="small" @click="handleAdjustViewers(row)">调围观</el-button>
                   <el-button type="info" link size="small" @click="handleClearViewers(row)">清围观</el-button>
                 </template>
               </el-table-column>
@@ -496,11 +537,91 @@
                 <el-input-number v-model="config.rebuyMultiplier" :min="0" :max="100000" />
                 <span class="hint">机器人输完补带入 = 底注 × 此倍数（默认50）。0=用建桌带入</span>
               </el-form-item>
+              <el-form-item label="输完换人">
+                <el-switch v-model="config.swapOnLoseEnabled" />
+                <span class="hint">机器人输完按概率不补带入、改为站起换上其他机器人，避免在座总是同几个（纯机器人/有真人都生效）</span>
+              </el-form-item>
+              <el-form-item label="换人概率(%)">
+                <el-input-number v-model="config.swapOnLoseProb" :min="0" :max="100" :disabled="!config.swapOnLoseEnabled" />
+                <span class="hint">0~100，命中则换人、未命中则照常补带入（默认30）</span>
+              </el-form-item>
+              <el-form-item label="拆牌错峰(ms)">
+                <el-input-number v-model="config.splitMinDelayMs" :min="0" :max="10000" :step="100" />
+                <span style="margin:0 6px">~</span>
+                <el-input-number v-model="config.splitMaxDelayMs" :min="0" :max="10000" :step="100" />
+                <span class="hint">机器人逐个拆牌、相邻随机滞后此区间（默认100~1500ms），不再同时拆；累计封顶=拆牌超时-3秒</span>
+              </el-form-item>
               <el-form-item>
                 <el-button type="primary" :icon="Check" @click="handleSaveConfig">保存俱乐部配置(持久化)</el-button>
               </el-form-item>
             </el-form>
             <div class="hint">该配置按俱乐部保存到数据库，服务重启后自动恢复（房间不恢复）。「本俱乐部压测」开关在右上角。</div>
+          </el-tab-pane>
+
+          <!-- ===== 输赢汇总（本俱乐部：结果·覆盖累计 + 对账过程可清理） ===== -->
+          <el-tab-pane label="输赢汇总" name="profit">
+            <div class="tab-toolbar">
+              <span class="op-title" style="margin:0">本俱乐部 群主对真人 输赢（结果 · 覆盖累计，持久化，解散改桌不丢）</span>
+              <div>
+                <el-button :icon="Refresh" :loading="profit.loading" @click="loadClubProfit">刷新</el-button>
+                <el-button type="warning" plain @click="handleClearClubHistory">清理本俱乐部对账过程</el-button>
+              </div>
+            </div>
+            <el-descriptions :column="4" border size="small">
+              <el-descriptions-item label="群主对真人净">
+                <span :class="netClass(profit.club.robotNet)">{{ fmtNet(profit.club.robotNet) }}</span>
+                <span class="hint">正=赢真人(吃分)·负=放水</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="真人净">{{ fmtNet(profit.club.realNet) }}</el-descriptions-item>
+              <el-descriptions-item label="累计把数">{{ profit.club.hands || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="最近时间">{{ profit.club.lastTime || '—' }}</el-descriptions-item>
+            </el-descriptions>
+            <div class="hint" style="margin:6px 0">结果=每把累加的权威口径，<b>不依赖</b>逐把过程；下方「对账过程」仅供核对、可随时清理，清理不影响上面的结果。</div>
+
+            <div class="op-title" style="margin-top:12px">按桌明细（每个房间实例一行；解散/改桌的旧桌也保留；来自对账过程）</div>
+            <el-table :data="profit.tables" v-loading="profit.tablesLoading" stripe border size="small" max-height="240"
+                      highlight-current-row @current-change="onPickProfitTable">
+              <el-table-column label="桌号" prop="tableNo" width="90" />
+              <el-table-column label="房间" prop="roomId" width="90" align="center" />
+              <el-table-column label="状态" width="80" align="center">
+                <template #default="{ row }"><el-tag size="small" :type="row.live ? 'success' : 'info'">{{ row.live ? '进行中' : '已结束' }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="该桌群主净" width="120" align="right">
+                <template #default="{ row }"><span :class="netClass(row.robotNet)">{{ fmtNet(row.robotNet) }}</span></template>
+              </el-table-column>
+              <el-table-column label="目标净" width="110" align="right">
+                <template #default="{ row }">{{ row.targetNet == null ? '—' : fmtNet(row.targetNet) }}</template>
+              </el-table-column>
+              <el-table-column label="把数" prop="hands" width="70" align="center" />
+              <el-table-column label="最近时间" prop="lastTime" width="150" align="center" />
+              <el-table-column label="操作" width="140" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" @click="onPickProfitTable(row)">逐把</el-button>
+                  <el-button size="small" type="warning" plain @click="handleClearTableHistory(row)">清过程</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="op-title" style="margin-top:12px">
+              逐把历史 {{ profit.history.roomId ? ('· 桌 ' + (profit.history.tableNo || profit.history.roomId)) : '· 本俱乐部全部' }}
+              <el-button size="small" link type="primary" @click="loadProfitHistory(null)">看全部</el-button>
+            </div>
+            <el-table :data="profit.history.rows" v-loading="profit.history.loading" stripe border size="small" max-height="320">
+              <el-table-column label="时间" prop="time" width="150" />
+              <el-table-column label="桌号" prop="tableNo" width="80" />
+              <el-table-column label="第几手" prop="handNo" width="70" align="center" />
+              <el-table-column label="真人净" width="100" align="right"><template #default="{ row }">{{ fmtNet(row.realNet) }}</template></el-table-column>
+              <el-table-column label="群主净(本把)" width="120" align="right"><template #default="{ row }"><span :class="netClass(row.robotNet)">{{ fmtNet(row.robotNet) }}</span></template></el-table-column>
+              <el-table-column label="该桌累计" width="110" align="right"><template #default="{ row }"><span :class="netClass(row.ledgerNet)">{{ fmtNet(row.ledgerNet) }}</span></template></el-table-column>
+              <el-table-column label="目标" width="100" align="right"><template #default="{ row }">{{ row.targetNet == null ? '—' : fmtNet(row.targetNet) }}</template></el-table-column>
+              <el-table-column label="真人/机器" width="90" align="center"><template #default="{ row }">{{ row.realCount }}/{{ row.robotCount }}</template></el-table-column>
+              <el-table-column label="控盘" width="64" align="center"><template #default="{ row }"><el-tag size="small" :type="row.controlled ? 'warning' : 'info'">{{ row.controlled ? '开' : '关' }}</el-tag></template></el-table-column>
+            </el-table>
+            <div class="pager">
+              <el-pagination layout="prev, pager, next, total" :total="profit.history.total"
+                :page-size="profit.history.size" :current-page="profit.history.page + 1"
+                @current-change="onProfitHistoryPage" />
+            </div>
           </el-tab-pane>
         </el-tabs>
       </el-card>
@@ -548,6 +669,7 @@
         <el-button type="primary" :loading="viewerAddLoading" @click="confirmAddViewers">确认加围观</el-button>
       </template>
     </el-dialog>
+
   </div>
 </template>
 
@@ -561,7 +683,9 @@ import {
   robotTopUp, setRobotAvatars, robotBatchCreate, listRobotTables,
   robotRandomAvatars, robotRandomNames, setRobotProfitRoom, uploadAvatar,
   generateClubViewers, listClubViewers, viewerRandomNames, viewerRandomAvatars,
-  addRobotViewers, clearRobotViewers
+  addRobotViewers, clearRobotViewers, adjustRobotViewers, assignAvatarsFromFolder,
+  getClubProfit, getProfitTables, getProfitHistory, clearProfitHistory,
+  setClubGameDisabled
 } from '../api'
 
 const loading = ref(false)
@@ -570,7 +694,9 @@ const status = reactive({})
 const config = reactive({
   enabled: false, activeStartHour: 0, activeEndHour: 24, maxHandsPerTable: 0,
   minActionDelayMs: 800, maxActionDelayMs: 2500, autoRefill: true,
-  autoTopUpClubScore: true, minClubScore: 10000, rebuyMultiplier: 50
+  autoTopUpClubScore: true, minClubScore: 10000, rebuyMultiplier: 50,
+  swapOnLoseEnabled: false, swapOnLoseProb: 30,
+  splitMinDelayMs: 100, splitMaxDelayMs: 1500
 })
 
 // 视图：list=俱乐部列表入口；detail=进入某俱乐部
@@ -606,6 +732,104 @@ const genFilesInput = ref(null)
 
 // 一键随机头像：选择本地图片（真实上传后随机分配给机器人）
 const bulkAvatar = reactive({ fileList: [], uploading: false, done: 0, total: 0 })
+const folderAssign = reactive({ path: '', loading: false, viewerPath: '', viewerLoading: false })
+
+// 本俱乐部 群主对真人输赢：结果(覆盖累计) + 按桌/逐把过程(可清理)
+const profit = reactive({
+  loading: false,
+  club: {},                 // 本俱乐部结果台账
+  tables: [], tablesLoading: false,
+  history: { rows: [], total: 0, page: 0, size: 30, roomId: null, tableNo: null, loading: false }
+})
+
+function fmtNet(n) {
+  const v = Number(n || 0)
+  return (v > 0 ? '+' : '') + v.toLocaleString()
+}
+function netClass(n) {
+  const v = Number(n || 0)
+  return v > 0 ? 'net-win' : (v < 0 ? 'net-lose' : '')
+}
+
+// 进入「输赢汇总」tab：加载本俱乐部结果 + 按桌 + 全部逐把
+async function loadClubProfit() {
+  if (!clubId.value) return
+  profit.loading = true
+  try {
+    const res = await getClubProfit(clubId.value)
+    profit.club = res.data || {}
+  } finally {
+    profit.loading = false
+  }
+  profit.history.roomId = null
+  profit.history.tableNo = null
+  profit.history.page = 0
+  await Promise.all([loadProfitTables(), loadProfitHistory(null)])
+}
+
+async function loadProfitTables() {
+  if (!clubId.value) return
+  profit.tablesLoading = true
+  try {
+    const res = await getProfitTables(clubId.value)
+    profit.tables = res.data || []
+  } finally {
+    profit.tablesLoading = false
+  }
+}
+
+function onPickProfitTable(row) {
+  if (!row || !row.roomId) return
+  profit.history.roomId = row.roomId
+  profit.history.tableNo = row.tableNo
+  profit.history.page = 0
+  loadProfitHistory(row.roomId)
+}
+
+async function loadProfitHistory(roomId) {
+  if (roomId === null) { profit.history.roomId = null; profit.history.tableNo = null; profit.history.page = 0 }
+  if (!clubId.value) return
+  profit.history.loading = true
+  try {
+    const res = await getProfitHistory({
+      clubId: clubId.value,
+      roomId: profit.history.roomId || undefined,
+      page: profit.history.page,
+      size: profit.history.size
+    })
+    const d = res.data || {}
+    profit.history.rows = d.rows || []
+    profit.history.total = d.total || 0
+  } finally {
+    profit.history.loading = false
+  }
+}
+
+function onProfitHistoryPage(p) {
+  profit.history.page = p - 1
+  loadProfitHistory(profit.history.roomId)
+}
+
+async function handleClearClubHistory() {
+  if (!clubId.value) return
+  try {
+    await ElMessageBox.confirm('确认清理【本俱乐部】的逐把对账过程？不影响群主输赢结果（结果单独保留）。', '清理对账过程', { type: 'warning' })
+  } catch (e) { return }
+  const res = await clearProfitHistory({ clubId: clubId.value })
+  ElMessage.success(`已清理对账过程 ${res.data?.deleted ?? 0} 条`)
+  await Promise.all([loadProfitTables(), loadProfitHistory(null)])
+}
+
+async function handleClearTableHistory(row) {
+  const roomId = (row && row.roomId) ? row.roomId : profit.history.roomId
+  if (!roomId) return
+  try {
+    await ElMessageBox.confirm(`确认清理【本桌 ${(row && row.tableNo) || profit.history.tableNo || roomId}】的逐把对账过程？不影响群主输赢结果。`, '清理对账过程', { type: 'warning' })
+  } catch (e) { return }
+  const res = await clearProfitHistory({ roomId })
+  ElMessage.success(`已清理对账过程 ${res.data?.deleted ?? 0} 条`)
+  await Promise.all([loadProfitTables(), loadProfitHistory(null)])
+}
 const bulkAvatarPct = computed(() => bulkAvatar.total ? Math.round(bulkAvatar.done / bulkAvatar.total * 100) : 0)
 const bulkDirInput = ref(null)
 const bulkFilesInput = ref(null)
@@ -666,7 +890,7 @@ const renameLoading = ref(false)
 
 const batch = reactive({
   tableCount: 10, perTable: 6, playerCount: 6, baseScore: 10, mangoMax: 5,
-  settleTime: 30, commissionRate: 5, bringIn: 0, sanHua: true, diWang: false, noScore: false, dingErHuangFeast: false,
+  settleTime: 30, commissionRate: 5, bringIn: 0, sanHua: true, diWang: false, noScore: false, dingErHuangFeast: false, gps: false,
   profitControlEnabled: false, profitMode: 'rate', targetProfit: 0, targetProfitRate: -0.05, perHandCap: 0, adjustStrength: 0.5
 })
 const batchLoading = ref(false)
@@ -730,6 +954,25 @@ async function loadClubs() {
 function searchClubs() {
   clubQuery.page = 0
   loadClubs()
+}
+
+// 切换俱乐部「禁用游戏」开关（打开后新玩家不能进桌坐下，不影响已在玩的）
+async function toggleGameDisabled(row, val) {
+  row._gdLoading = true
+  try {
+    const res = await setClubGameDisabled(row.id, val)
+    if (res.code === 200) {
+      ElMessage.success(val ? '已禁用该俱乐部游戏（新玩家不能进桌）' : '已恢复该俱乐部游戏')
+    } else {
+      row.gameDisabled = !val
+      ElMessage.error(res.message || '设置失败')
+    }
+  } catch (e) {
+    row.gameDisabled = !val
+    ElMessage.error('设置失败')
+  } finally {
+    row._gdLoading = false
+  }
 }
 
 function onClubPageChange(p) {
@@ -822,6 +1065,7 @@ function onMemberPageChange(p) {
 function onTabChange(name) {
   if (name === 'viewers') { viewerQuery.page = 0; loadViewers() }
   else if (name === 'tables') loadTables()
+  else if (name === 'profit') loadClubProfit()
 }
 
 function onSelectionChange(rows) {
@@ -874,6 +1118,27 @@ async function handleBulkAvatars() {
     loadMembers()
   } finally {
     bulkAvatar.uploading = false
+  }
+}
+
+async function handleAssignFromFolder(type) {
+  if (!clubId.value) { ElMessage.warning('请先选择俱乐部'); return }
+  const path = (type === 2 ? folderAssign.viewerPath : folderAssign.path || '').trim()
+  if (!path) { ElMessage.warning('请填写服务器目录'); return }
+  const who = type === 2 ? '围观机器人' : '打牌机器人'
+  try {
+    await ElMessageBox.confirm(`确认从服务器目录【${path}】按文件名顺序一一分配给本俱乐部全部${who}？图片数必须与机器人数一致。`, '服务器文件夹一一分配', { type: 'warning' })
+  } catch (e) { return }
+  if (type === 2) folderAssign.viewerLoading = true; else folderAssign.loading = true
+  try {
+    const res = await assignAvatarsFromFolder({ clubId: clubId.value, folderPath: path, type })
+    const d = res.data || {}
+    ElMessage.success(`一一分配完成：图片 ${d.imageCount}，${who} ${d.robotCount}，已更新 ${d.changed}`)
+    if (type === 2) loadViewers(); else loadMembers()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '分配失败（请检查图片数与机器人数是否一致）')
+  } finally {
+    if (type === 2) folderAssign.viewerLoading = false; else folderAssign.loading = false
   }
 }
 
@@ -1097,6 +1362,13 @@ async function handleClearViewers(row) {
   loadTables()
 }
 
+async function handleAdjustViewers(row) {
+  // 围观机器人集合不变，只换昵称+随机顺序（程序也会按 viewer_adjust_seconds 周期自动调整，默认5分钟）
+  const res = await adjustRobotViewers({ roomId: row.roomId })
+  ElMessage.success(res.message || `已调围观 ${res.data?.adjusted ?? 0} 个`)
+  loadTables()
+}
+
 async function loadTables() {
   if (!clubId.value) return
   tableLoading.value = true
@@ -1135,4 +1407,6 @@ onMounted(() => {
 .pager { margin-top: 12px; display: flex; justify-content: flex-end; }
 .tab-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .profit-help p { margin: 4px 0; font-size: 13px; line-height: 1.6; }
+.net-win { color: #f56c6c; font-weight: 600; }
+.net-lose { color: #67c23a; font-weight: 600; }
 </style>

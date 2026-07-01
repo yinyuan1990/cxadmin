@@ -58,6 +58,10 @@ export function resetUserPassword(userId, newPassword) {
   return request.post('/admin/user/resetPassword', { userId, newPassword })
 }
 
+export function updateUserAvatar(userId, avatar) {
+  return request.post('/admin/user/updateAvatar', { userId, avatar })
+}
+
 export function getScoreLog(params) {
   return request.get('/admin/user/scoreLog', { params })
 }
@@ -452,7 +456,7 @@ export function adminGiftDelete(id) {
   return request.post('/admin/gift/delete', { id })
 }
 
-// ---- 机器人压测（仅压测用） ----
+// ---- 俱乐部管理 / 机器人压测 ----
 
 export function getRobotStatus() {
   // 全局运行态：robotCount / managedRoomCount / totalRoomCount / anyClubEnabled
@@ -472,6 +476,11 @@ export function updateRobotConfig(data) {
 export function setRobotEnabled(clubId, enabled) {
   // 某俱乐部压测开关（落库）
   return request.post('/admin/robot/enable', { clubId, enabled })
+}
+
+export function setClubGameDisabled(clubId, gameDisabled) {
+  // 俱乐部「禁用游戏」开关（维护/测试）：true=禁止新玩家进桌坐下，不影响已在玩的
+  return request.post('/admin/robot/setGameDisabled', { clubId, gameDisabled })
 }
 
 export function reloadRobotIds() {
@@ -531,6 +540,35 @@ export function robotStopAll(clubId) {
   return request.post('/admin/robot/stopAll', clubId ? { clubId } : {})
 }
 
+export function assignAvatarsFromFolder(data) {
+  return request.post('/admin/robot/avatars/assignFromFolder', data)
+}
+
+// 控盘对真人输赢 — 本俱乐部结果 / 按桌 / 历史回顾（持久化，解散改桌后仍可查）
+export function getClubProfit(clubId) {
+  return request.get('/admin/robot/profit/clubSummary', { params: { clubId } })
+}
+
+// 全局汇总（保留，跨俱乐部；当前后台按俱乐部查看）
+export function getProfitSummary() {
+  return request.get('/admin/robot/profit/summary')
+}
+
+export function getProfitTables(clubId) {
+  return request.get('/admin/robot/profit/tables', { params: { clubId } })
+}
+
+export function getProfitHistory(params) {
+  // params: { clubId?, roomId?, page?, size? }
+  return request.get('/admin/robot/profit/history', { params })
+}
+
+// 手动清理逐把「对账过程」（不影响群主输赢结果）
+export function clearProfitHistory(data) {
+  // data: { clubId?, roomId?, beforeDays? }
+  return request.post('/admin/robot/profit/history/clear', data || {})
+}
+
 export function robotRandomAvatars(data) {
   // data: { clubId, urls: [url...], userIds? }  先上传本地图片拿到 urls 再调用
   return request.post('/admin/robot/randomAvatars', data)
@@ -585,6 +623,11 @@ export function addRobotViewers(data) {
 export function clearRobotViewers(data) {
   // data: { roomId }
   return request.post('/admin/robot/viewers/clear', data)
+}
+
+export function adjustRobotViewers(data) {
+  // data: { roomId } 围观机器人集合不变，只换昵称+随机顺序
+  return request.post('/admin/robot/viewers/adjust', data)
 }
 
 // ---- 服务器日志下载 / 清理 ----
