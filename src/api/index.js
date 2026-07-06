@@ -239,6 +239,56 @@ export function setSoloWaitTimeout(data) {
   return request.post('/api/system/config/soloWaitTimeout', data)
 }
 
+// ---- MTT 比赛管理（主服 /admin/mtt/* 代理比赛服） ----
+
+export function mttList(clubId) {
+  return request.post('/admin/mtt/list', clubId ? { clubId } : {})
+}
+
+export function mttCreate(data) {
+  return request.post('/admin/mtt/create', data)
+}
+
+export function mttCancel(matchId, reason) {
+  return request.post('/admin/mtt/cancel', { matchId, reason })
+}
+
+export function mttDetail(matchId) {
+  return request.post('/admin/mtt/detail', { matchId })
+}
+
+export function mttCompetitors(matchId) {
+  return request.post('/admin/mtt/competitors', { matchId })
+}
+
+export function mttLedger(matchId) {
+  return request.post('/admin/mtt/ledger', { matchId })
+}
+
+export function mttReconcile(matchId) {
+  return request.post('/admin/mtt/reconcile', { matchId })
+}
+
+export function mttStats(clubId) {
+  return request.post('/admin/mtt/stats', clubId ? { clubId } : {})
+}
+
+export function mttPrizeGrants(matchId) {
+  return request.post('/admin/mtt/prizeGrants', { matchId })
+}
+
+export function mttPrizeRedeem(grantId, operator) {
+  return request.post('/admin/mtt/prizeRedeem', { grantId, operator })
+}
+
+export function mttAutoConfigGet(clubId) {
+  return request.post('/admin/mtt/autoConfig/get', { clubId })
+}
+
+export function mttAutoConfigSave(data) {
+  return request.post('/admin/mtt/autoConfig/save', data)
+}
+
 // ---- 排队保队时间（排队中玩家离线后保留排队资格的秒数，0=离线立即踢队） ----
 
 export function getQueueKeepSeconds() {

@@ -82,6 +82,12 @@ const routes = [
         name: 'SystemOps',
         component: () => import('../views/SystemOpsView.vue'),
         meta: { title: '系统运维' }
+      },
+      {
+        path: 'mtt',
+        name: 'Mtt',
+        component: () => import('../views/MttView.vue'),
+        meta: { title: 'MTT比赛管理' }
       }
     ]
   },
