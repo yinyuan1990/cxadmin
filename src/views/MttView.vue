@@ -50,7 +50,7 @@
         </el-table-column>
         <el-table-column prop="robotCount" label="机器人" width="80" align="center" />
         <el-table-column prop="participants" label="参赛" width="70" align="center" />
-        <el-table-column prop="totalBonus" label="奖池" width="90" />
+        <el-table-column prop="totalBonus" label="冠军兑付" width="90" />
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row)">详情</el-button>
@@ -71,19 +71,23 @@
         </el-form-item>
         <el-form-item label="奖励类型">
           <el-radio-group v-model="form.rewardType">
-            <el-radio :value="1">金币赛(金币报名,发金币)</el-radio>
-            <el-radio :value="2">钻石赛(钻石报名,发钻石)</el-radio>
-            <el-radio :value="3">实物赛(钻石报名,发实物)</el-radio>
+            <el-radio :value="1">金币赛(金币报名,冠军通吃)</el-radio>
+            <el-radio :value="2">钻石赛(钻石报名,冠军通吃)</el-radio>
+            <el-radio :value="3">实物赛(钻石报名,按名次发实物)</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item :label="'报名费(' + feeUnit(form.rewardType) + ')'">
-          <el-input-number v-model="form.entryFee" :min="0" :step="form.rewardType===1?100:1" style="width:180px" />
+          <el-input-number v-model="form.entryFee" :min="form.rewardType===3?0:1" :step="form.rewardType===1?100:1" style="width:180px" />
           <span class="tip" v-if="form.rewardType===1">金币由钻石兑换(默认1钻=1000金币,系统配置可调)</span>
           <span class="tip" v-else>直接扣玩家钻石</span>
         </el-form-item>
-        <el-form-item label="初始记分牌">
+        <el-form-item v-if="form.rewardType!==3" label="初始记分牌">
+          <el-input :model-value="form.entryFee + ' (=报名费)'" disabled style="width:180px" />
+          <span class="tip">记分牌即货币:1记分牌=1{{ feeUnit(form.rewardType) }},输赢即钱的流动,冠军兑付全部记分牌</span>
+        </el-form-item>
+        <el-form-item v-else label="初始记分牌">
           <el-input-number v-model="form.initialScore" :min="1000" :step="1000" style="width:180px" />
-          <span class="tip" v-if="form.rewardType===3">实物赛记分牌为纯虚拟计分,比赛结束作废</span>
+          <span class="tip">实物赛记分牌为纯虚拟计分,比赛结束作废</span>
         </el-form-item>
         <el-form-item label="桌型">
           <el-radio-group v-model="form.seatNum">
@@ -100,9 +104,6 @@
         <el-form-item label="底皮级别表">
           <el-input v-model="form.levelTable" placeholder='[[1,10],[2,20],[3,30],[4,50],[5,80],[6,120],[7,200]] 空=默认' />
         </el-form-item>
-        <el-form-item v-if="form.rewardType!==3" label="名次比例%">
-          <el-input v-model="form.rewardRanking" placeholder="[50,30,20] = 前3名分50/30/20%" />
-        </el-form-item>
         <el-form-item v-if="form.rewardType===3" label="奖品清单">
           <el-input v-model="form.prizeList" type="textarea" :rows="3"
             placeholder='按名次配多件: [{"rank":1,"prizeName":"iPhone 17","prizeIcon":"","isVirtual":false},{"rank":2,"prizeName":"AirPods","prizeIcon":"","isVirtual":false}]' />
@@ -110,7 +111,7 @@
         </el-form-item>
         <el-form-item v-if="form.rewardType!==3" :label="'固定奖池(' + feeUnit(form.rewardType) + ')'">
           <el-input-number v-model="form.initialPool" :min="0" :step="1000" style="width:180px" />
-          <span class="tip">运营预置,叠加进 报名人数×报名费 的奖池</span>
+          <span class="tip">运营预置,叠加进冠军兑付(报名人数×报名费+固定奖池)</span>
         </el-form-item>
         <el-form-item label="机器人数">
           <el-input-number v-model="form.robotCount" :min="0" :max="200" style="width:180px" />
@@ -219,7 +220,7 @@
         <el-form-item label="名称前缀"><el-input v-model="autoCfg.namePrefix" style="width:220px" placeholder="公开赛" /></el-form-item>
         <el-form-item label="比赛模板JSON">
           <el-input v-model="autoCfg.templateJson" type="textarea" :rows="4"
-            placeholder='{"entryFee":1000,"initialScore":10000,"seatNum":8,"lowerLimit":4,"upperLimit":200,"upgradeMinutes":10,"rewardType":1,"rewardRanking":"[50,30,20]","robotCount":6}  rewardType:1金币赛 2钻石赛 3实物赛(需prizeList)' />
+            placeholder='{"entryFee":1000,"seatNum":8,"lowerLimit":4,"upperLimit":200,"upgradeMinutes":10,"rewardType":1,"robotCount":6}  rewardType:1金币赛 2钻石赛(冠军通吃,记分牌=报名费) 3实物赛(需prizeList+initialScore)' />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -264,7 +265,7 @@ function defaultForm() {
     name: '', clubId: null, startTimeDate: null,
     entryFee: 1000, initialScore: 10000, seatNum: 8,
     lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
-    levelTable: '', rewardType: 1, rewardRanking: '[50,30,20]',
+    levelTable: '', rewardType: 1,
     prizeList: '', initialPool: 0, robotCount: 0
   }
 }
