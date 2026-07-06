@@ -666,6 +666,42 @@
         </div>
       </el-card>
 
+      <!-- ⭐ 钻石兑换金币比例（MTT金币赛） -->
+      <el-card class="gold-rate-card" shadow="never" style="margin-top:16px;">
+        <template #header>
+          <span style="font-weight:600; color:#E6A23C;">钻石兑换金币比例（MTT金币赛）</span>
+        </template>
+        <div class="test-tool-row">
+          <div class="test-tool-info">
+            <span class="test-tool-label">1 钻石 = N 金币</span>
+            <span class="test-tool-desc">
+              金币是 MTT <b>金币赛</b>的报名/奖励货币，只能由钻石<b>单向兑换</b>而来（不能换回钻石）。<br/>
+              <span style="color:#67C23A;">默认 1 钻石 = 1000 金币。修改只影响之后的兑换，历史兑换不追溯。范围 1 ~ 1000000。</span>
+            </span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="color:#909399; font-size:12px;">1 钻石 =</span>
+            <el-input-number
+              v-model="goldPerDiamond"
+              :min="1"
+              :max="1000000"
+              :step="100"
+              size="small"
+              style="width: 160px;"
+            />
+            <span style="color:#909399; font-size:12px;">金币</span>
+            <el-button
+              type="primary"
+              size="small"
+              :loading="goldRateSaving"
+              @click="handleSaveGoldRate"
+            >
+              保存
+            </el-button>
+          </div>
+        </div>
+      </el-card>
+
       <!-- ⭐ GPS 防火牌配置 -->
       <el-card class="gps-card" shadow="never" style="margin-top:16px;">
         <template #header>
@@ -832,7 +868,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Edit } from '@element-plus/icons-vue'
-import { getAllConfigs, updateConfig, getDealRules, setDealRules, getBonusPoolEnabled, toggleBonusPoolEnabled, getForceShowCardCost, setForceShowCardCost, getRegisterNicknameMaxLength, setRegisterNicknameMaxLength, getClubNameMaxLength, setClubNameMaxLength, getCommissionRateMax, setCommissionRateMax, getCommissionSettleDiamondCost, setCommissionSettleDiamondCost, getCommissionSettleDiamondTiers, setCommissionSettleDiamondTiers, getAvailableSettleTime, setAvailableSettleTime, getDebugTraceEnabled, toggleDebugTraceEnabled, getRunAwayPenaltyConfig, setRunAwayPenaltyConfig, getWinnerEarlyLeaveConfig, setWinnerEarlyLeaveConfig, getGpsConfig, setGpsConfig, getChatMessageTtl, setChatMessageTtl, getGhostExpireSeconds, setGhostExpireSeconds, getPeriodSettleBringInSeconds, setPeriodSettleBringInSeconds, getInsufficientChipsProtectSeconds, setInsufficientChipsProtectSeconds, getSoloWaitTimeout, setSoloWaitTimeout, getQueueKeepSeconds, setQueueKeepSeconds } from '../api/index'
+import { getAllConfigs, updateConfig, getDealRules, setDealRules, getBonusPoolEnabled, toggleBonusPoolEnabled, getForceShowCardCost, setForceShowCardCost, getRegisterNicknameMaxLength, setRegisterNicknameMaxLength, getClubNameMaxLength, setClubNameMaxLength, getCommissionRateMax, setCommissionRateMax, getCommissionSettleDiamondCost, setCommissionSettleDiamondCost, getCommissionSettleDiamondTiers, setCommissionSettleDiamondTiers, getAvailableSettleTime, setAvailableSettleTime, getDebugTraceEnabled, toggleDebugTraceEnabled, getRunAwayPenaltyConfig, setRunAwayPenaltyConfig, getWinnerEarlyLeaveConfig, setWinnerEarlyLeaveConfig, getGpsConfig, setGpsConfig, getChatMessageTtl, setChatMessageTtl, getGhostExpireSeconds, setGhostExpireSeconds, getPeriodSettleBringInSeconds, setPeriodSettleBringInSeconds, getInsufficientChipsProtectSeconds, setInsufficientChipsProtectSeconds, getSoloWaitTimeout, setSoloWaitTimeout, getQueueKeepSeconds, setQueueKeepSeconds, getGoldPerDiamond, setGoldPerDiamond } from '../api/index'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -1622,6 +1658,40 @@ async function handleSaveQueueKeep() {
   }
 }
 
+// ⭐ 钻石兑换金币比例（1钻=N金币，MTT金币赛报名货币）
+const goldPerDiamond = ref(1000)
+const goldRateSaving = ref(false)
+
+async function loadGoldPerDiamond() {
+  try {
+    const res = await getGoldPerDiamond()
+    if (res.code === 200 && res.data) {
+      goldPerDiamond.value = Number(res.data.rate) || 1000
+    }
+  } catch { /* ignore */ }
+}
+
+async function handleSaveGoldRate() {
+  const n = Number(goldPerDiamond.value)
+  if (!(n >= 1 && n <= 1000000)) {
+    ElMessage.warning('请输入 1 ~ 1000000')
+    return
+  }
+  goldRateSaving.value = true
+  try {
+    const res = await setGoldPerDiamond(n)
+    if (res.code === 200) {
+      ElMessage.success('已保存：1 钻石 = ' + n + ' 金币')
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    goldRateSaving.value = false
+  }
+}
+
 // ⭐ GPS 防火牌配置
 const gps = ref({
   minDistanceMeters: 100,
@@ -1872,6 +1942,7 @@ onMounted(() => {
   loadInsufficientChipsProtectSeconds()
   loadSoloWaitTimeout()
   loadQueueKeepSeconds()  // ⭐ 排队保队时间
+  loadGoldPerDiamond()    // ⭐ 钻石兑换金币比例
 })
 </script>
 

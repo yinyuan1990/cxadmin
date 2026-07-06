@@ -277,6 +277,10 @@ export function mttPrizeGrants(matchId) {
   return request.post('/admin/mtt/prizeGrants', { matchId })
 }
 
+export function mttPrizeShip(grantId, shipNote, operator) {
+  return request.post('/admin/mtt/prizeShip', { grantId, shipNote, operator })
+}
+
 export function mttPrizeRedeem(grantId, operator) {
   return request.post('/admin/mtt/prizeRedeem', { grantId, operator })
 }
@@ -297,6 +301,16 @@ export function getQueueKeepSeconds() {
 
 export function setQueueKeepSeconds(seconds) {
   return request.post('/api/system/config/queueKeepSeconds', { seconds })
+}
+
+// ---- 钻石兑换金币比例（1钻=N金币，单向兑换，MTT金币赛报名货币） ----
+
+export function getGoldPerDiamond() {
+  return request.get('/api/system/config/goldPerDiamond')
+}
+
+export function setGoldPerDiamond(rate) {
+  return request.post('/api/system/config/goldPerDiamond', { rate })
 }
 
 // ---- 抽水上限(commission_rate_max) ----

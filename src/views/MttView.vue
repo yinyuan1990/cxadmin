@@ -37,12 +37,14 @@
         <el-table-column label="开赛时间" width="150">
           <template #default="{ row }">{{ fmtTime(row.startTime) }}</template>
         </el-table-column>
-        <el-table-column prop="entryFee" label="报名费" width="90" />
+        <el-table-column label="报名费" width="120">
+          <template #default="{ row }">{{ row.entryFee }} {{ feeUnit(row.rewardType) }}</template>
+        </el-table-column>
         <el-table-column prop="initialScore" label="初始记分牌" width="100" />
-        <el-table-column label="奖励" width="90" align="center">
+        <el-table-column label="类型" width="90" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.rewardType===1?'info':(row.rewardType===2?'warning':'danger')">
-              {{ row.rewardType===1?'积分':(row.rewardType===2?'钻石':'实物') }}
+              {{ row.rewardType===1?'金币赛':(row.rewardType===2?'钻石赛':'实物赛') }}
             </el-tag>
           </template>
         </el-table-column>
@@ -67,8 +69,22 @@
         <el-form-item label="开赛时间">
           <el-date-picker v-model="form.startTimeDate" type="datetime" placeholder="选择开赛时间" style="width:220px" />
         </el-form-item>
-        <el-form-item label="报名费(分)"><el-input-number v-model="form.entryFee" :min="0" :step="100" style="width:180px" /></el-form-item>
-        <el-form-item label="初始记分牌"><el-input-number v-model="form.initialScore" :min="1000" :step="1000" style="width:180px" /></el-form-item>
+        <el-form-item label="奖励类型">
+          <el-radio-group v-model="form.rewardType">
+            <el-radio :value="1">金币赛(金币报名,发金币)</el-radio>
+            <el-radio :value="2">钻石赛(钻石报名,发钻石)</el-radio>
+            <el-radio :value="3">实物赛(钻石报名,发实物)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="'报名费(' + feeUnit(form.rewardType) + ')'">
+          <el-input-number v-model="form.entryFee" :min="0" :step="form.rewardType===1?100:1" style="width:180px" />
+          <span class="tip" v-if="form.rewardType===1">金币由钻石兑换(默认1钻=1000金币,系统配置可调)</span>
+          <span class="tip" v-else>直接扣玩家钻石</span>
+        </el-form-item>
+        <el-form-item label="初始记分牌">
+          <el-input-number v-model="form.initialScore" :min="1000" :step="1000" style="width:180px" />
+          <span class="tip" v-if="form.rewardType===3">实物赛记分牌为纯虚拟计分,比赛结束作废</span>
+        </el-form-item>
         <el-form-item label="桌型">
           <el-radio-group v-model="form.seatNum">
             <el-radio :value="6">6人桌</el-radio>
@@ -84,21 +100,18 @@
         <el-form-item label="底皮级别表">
           <el-input v-model="form.levelTable" placeholder='[[1,10],[2,20],[3,30],[4,50],[5,80],[6,120],[7,200]] 空=默认' />
         </el-form-item>
-        <el-form-item label="奖励类型">
-          <el-radio-group v-model="form.rewardType">
-            <el-radio :value="1">积分</el-radio>
-            <el-radio :value="2">钻石</el-radio>
-            <el-radio :value="3">实物</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="名次比例%">
+        <el-form-item v-if="form.rewardType!==3" label="名次比例%">
           <el-input v-model="form.rewardRanking" placeholder="[50,30,20] = 前3名分50/30/20%" />
         </el-form-item>
         <el-form-item v-if="form.rewardType===3" label="奖品清单">
-          <el-input v-model="form.prizeList" type="textarea" :rows="2"
-            placeholder='[{"rank":1,"prizeName":"iPhone 17","prizeIcon":"","isVirtual":false}]' />
+          <el-input v-model="form.prizeList" type="textarea" :rows="3"
+            placeholder='按名次配多件: [{"rank":1,"prizeName":"iPhone 17","prizeIcon":"","isVirtual":false},{"rank":2,"prizeName":"AirPods","prizeIcon":"","isVirtual":false}]' />
+          <span class="tip">实物赛必填。玩家获奖后填收货地址,后台派送</span>
         </el-form-item>
-        <el-form-item label="固定奖池(分)"><el-input-number v-model="form.initialPool" :min="0" :step="1000" style="width:180px" /></el-form-item>
+        <el-form-item v-if="form.rewardType!==3" :label="'固定奖池(' + feeUnit(form.rewardType) + ')'">
+          <el-input-number v-model="form.initialPool" :min="0" :step="1000" style="width:180px" />
+          <span class="tip">运营预置,叠加进 报名人数×报名费 的奖池</span>
+        </el-form-item>
         <el-form-item label="机器人数">
           <el-input-number v-model="form.robotCount" :min="0" :max="200" style="width:180px" />
           <span class="tip">开赛前5分钟自动报名(公共俱乐部撑场用)</span>
@@ -153,22 +166,34 @@
       </template>
     </el-dialog>
 
-    <!-- 实物发放单 -->
-    <el-dialog v-model="prizesVisible" title="实物发放单" width="620px">
+    <!-- 实物发放单（含收货地址 + 派送） -->
+    <el-dialog v-model="prizesVisible" title="实物发放单" width="960px">
       <el-table :data="prizes" border size="small">
-        <el-table-column prop="rankNo" label="名次" width="70" align="center" />
-        <el-table-column prop="userId" label="userId" width="90" />
-        <el-table-column prop="prizeName" label="奖品" min-width="120" />
-        <el-table-column prop="status" label="状态" width="100" align="center">
+        <el-table-column prop="rankNo" label="名次" width="60" align="center" />
+        <el-table-column prop="userId" label="userId" width="80" />
+        <el-table-column prop="prizeName" label="奖品" min-width="110" />
+        <el-table-column label="收货信息" min-width="220">
           <template #default="{ row }">
-            <el-tag :type="row.status==='REDEEMED'?'success':'warning'" size="small">
-              {{ row.status==='REDEEMED'?'已兑付':'待核销' }}
-            </el-tag>
+            <template v-if="row.isVirtual"><span class="tip">虚拟奖品,无需地址</span></template>
+            <template v-else-if="row.receiverAddress">
+              <div>{{ row.receiverName }} {{ row.receiverPhone }}</div>
+              <div class="tip">{{ row.receiverAddress }}</div>
+            </template>
+            <template v-else><el-tag type="info" size="small">玩家未填地址</el-tag></template>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100">
+        <el-table-column prop="shipNote" label="快递单号" width="130" />
+        <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-button v-if="row.status!=='REDEEMED'" size="small" type="success" @click="doRedeem(row)">核销</el-button>
+            <el-tag :type="prizeStatusTag(row.status)" size="small">{{ prizeStatusText(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <el-button v-if="!row.isVirtual && row.status==='GRANTED' && row.receiverAddress"
+                       size="small" type="primary" @click="doShip(row)">派送</el-button>
+            <el-button v-if="row.status!=='REDEEMED' && (row.isVirtual || row.status==='SHIPPED')"
+                       size="small" type="success" @click="doRedeem(row)">核销</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -194,7 +219,7 @@
         <el-form-item label="名称前缀"><el-input v-model="autoCfg.namePrefix" style="width:220px" placeholder="公开赛" /></el-form-item>
         <el-form-item label="比赛模板JSON">
           <el-input v-model="autoCfg.templateJson" type="textarea" :rows="4"
-            placeholder='{"entryFee":1000,"initialScore":10000,"seatNum":8,"lowerLimit":4,"upperLimit":200,"upgradeMinutes":10,"rewardType":1,"rewardRanking":"[50,30,20]","robotCount":6}' />
+            placeholder='{"entryFee":1000,"initialScore":10000,"seatNum":8,"lowerLimit":4,"upperLimit":200,"upgradeMinutes":10,"rewardType":1,"rewardRanking":"[50,30,20]","robotCount":6}  rewardType:1金币赛 2钻石赛 3实物赛(需prizeList)' />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -210,7 +235,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   mttList, mttCreate, mttCancel, mttDetail, mttCompetitors, mttLedger,
-  mttReconcile, mttStats, mttPrizeGrants, mttPrizeRedeem,
+  mttReconcile, mttStats, mttPrizeGrants, mttPrizeShip, mttPrizeRedeem,
   mttAutoConfigGet, mttAutoConfigSave
 } from '../api/index'
 
@@ -246,6 +271,10 @@ function defaultForm() {
 
 function statusText(s) { return { 0: '已结束', 1: '报名中', 2: '进行中', 3: '已解散' }[s] ?? s }
 function statusTag(s) { return { 0: 'success', 1: 'info', 2: 'warning', 3: 'danger' }[s] ?? 'info' }
+// 报名费货币单位：金币赛=金币；钻石赛/实物赛=钻石
+function feeUnit(rewardType) { return rewardType === 1 ? '金币' : '钻石' }
+function prizeStatusText(s) { return { GRANTED: '待派送', SHIPPED: '已派送', REDEEMED: '已兑付' }[s] ?? s }
+function prizeStatusTag(s) { return { GRANTED: 'warning', SHIPPED: 'primary', REDEEMED: 'success' }[s] ?? 'info' }
 function fmtTime(ms) {
   if (!ms) return '-'
   const d = new Date(Number(ms))
@@ -329,6 +358,24 @@ async function openPrizes(row) {
   prizesVisible.value = true
   const res = await mttPrizeGrants(row.id)
   prizes.value = res.code === 200 ? (res.data || []) : []
+}
+
+async function doShip(row) {
+  let shipNote = ''
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `收货人：${row.receiverName} ${row.receiverPhone}\n地址：${row.receiverAddress}\n\n请输入快递单号/派送备注：`,
+      `派送「${row.prizeName}」`, { confirmButtonText: '确认派送', inputPlaceholder: '如 SF1234567890' })
+    shipNote = value || ''
+  } catch { return }
+  const res = await mttPrizeShip(row.id, shipNote, 'admin')
+  if (res.code === 200) {
+    ElMessage.success('已标记派送')
+    row.status = 'SHIPPED'
+    row.shipNote = shipNote
+  } else {
+    ElMessage.error(res.message || '派送失败')
+  }
 }
 
 async function doRedeem(row) {
