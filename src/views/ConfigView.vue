@@ -630,6 +630,42 @@
         </el-form>
       </el-card>
 
+      <!-- ⭐ 排队保队时间 -->
+      <el-card class="queue-keep-card" shadow="never" style="margin-top:16px;">
+        <template #header>
+          <span style="font-weight:600; color:#409EFF;">排队保队时间</span>
+        </template>
+        <div class="test-tool-row">
+          <div class="test-tool-info">
+            <span class="test-tool-label">排队中离线保留时长</span>
+            <span class="test-tool-desc">
+              排队房间里正在排队的玩家<b>断线/退出程序</b>后，保留其排队资格（位次不变）的时长。<br/>
+              <span style="color:#F56C6C;">默认 <b>0</b>：离线立即踢出队伍，后面的人自动前移。</span><br/>
+              <span style="color:#67C23A;">设为 N&gt;0：离线后保留 N 秒，期间重连回来位次不丢；超时仍未回来则移出队伍。范围 0 ~ 600 秒。</span>
+            </span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <el-input-number
+              v-model="queueKeepSeconds"
+              :min="0"
+              :max="600"
+              :step="5"
+              size="small"
+              style="width: 160px;"
+            />
+            <span style="color:#909399; font-size:12px;">秒</span>
+            <el-button
+              type="primary"
+              size="small"
+              :loading="queueKeepSaving"
+              @click="handleSaveQueueKeep"
+            >
+              保存
+            </el-button>
+          </div>
+        </div>
+      </el-card>
+
       <!-- ⭐ GPS 防火牌配置 -->
       <el-card class="gps-card" shadow="never" style="margin-top:16px;">
         <template #header>
@@ -796,7 +832,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Edit } from '@element-plus/icons-vue'
-import { getAllConfigs, updateConfig, getDealRules, setDealRules, getBonusPoolEnabled, toggleBonusPoolEnabled, getForceShowCardCost, setForceShowCardCost, getRegisterNicknameMaxLength, setRegisterNicknameMaxLength, getClubNameMaxLength, setClubNameMaxLength, getCommissionRateMax, setCommissionRateMax, getCommissionSettleDiamondCost, setCommissionSettleDiamondCost, getCommissionSettleDiamondTiers, setCommissionSettleDiamondTiers, getAvailableSettleTime, setAvailableSettleTime, getDebugTraceEnabled, toggleDebugTraceEnabled, getRunAwayPenaltyConfig, setRunAwayPenaltyConfig, getWinnerEarlyLeaveConfig, setWinnerEarlyLeaveConfig, getGpsConfig, setGpsConfig, getChatMessageTtl, setChatMessageTtl, getGhostExpireSeconds, setGhostExpireSeconds, getPeriodSettleBringInSeconds, setPeriodSettleBringInSeconds, getInsufficientChipsProtectSeconds, setInsufficientChipsProtectSeconds, getSoloWaitTimeout, setSoloWaitTimeout } from '../api/index'
+import { getAllConfigs, updateConfig, getDealRules, setDealRules, getBonusPoolEnabled, toggleBonusPoolEnabled, getForceShowCardCost, setForceShowCardCost, getRegisterNicknameMaxLength, setRegisterNicknameMaxLength, getClubNameMaxLength, setClubNameMaxLength, getCommissionRateMax, setCommissionRateMax, getCommissionSettleDiamondCost, setCommissionSettleDiamondCost, getCommissionSettleDiamondTiers, setCommissionSettleDiamondTiers, getAvailableSettleTime, setAvailableSettleTime, getDebugTraceEnabled, toggleDebugTraceEnabled, getRunAwayPenaltyConfig, setRunAwayPenaltyConfig, getWinnerEarlyLeaveConfig, setWinnerEarlyLeaveConfig, getGpsConfig, setGpsConfig, getChatMessageTtl, setChatMessageTtl, getGhostExpireSeconds, setGhostExpireSeconds, getPeriodSettleBringInSeconds, setPeriodSettleBringInSeconds, getInsufficientChipsProtectSeconds, setInsufficientChipsProtectSeconds, getSoloWaitTimeout, setSoloWaitTimeout, getQueueKeepSeconds, setQueueKeepSeconds } from '../api/index'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -1552,6 +1588,40 @@ async function handleSaveSoloWait() {
   }
 }
 
+// ⭐ 排队保队时间（排队中玩家离线后保留排队资格的秒数，0=离线立即踢队）
+const queueKeepSeconds = ref(0)
+const queueKeepSaving = ref(false)
+
+async function loadQueueKeepSeconds() {
+  try {
+    const res = await getQueueKeepSeconds()
+    if (res.code === 200 && res.data) {
+      queueKeepSeconds.value = Number(res.data.seconds) || 0
+    }
+  } catch { /* ignore */ }
+}
+
+async function handleSaveQueueKeep() {
+  const s = Number(queueKeepSeconds.value)
+  if (!(s >= 0 && s <= 600)) {
+    ElMessage.warning('请输入 0 ~ 600 秒')
+    return
+  }
+  queueKeepSaving.value = true
+  try {
+    const res = await setQueueKeepSeconds(s)
+    if (res.code === 200) {
+      ElMessage.success(s === 0 ? '已保存：排队玩家离线立即踢出队伍' : '已保存：离线保队 ' + s + ' 秒')
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    queueKeepSaving.value = false
+  }
+}
+
 // ⭐ GPS 防火牌配置
 const gps = ref({
   minDistanceMeters: 100,
@@ -1801,6 +1871,7 @@ onMounted(() => {
   loadPeriodSettleBringInSeconds()
   loadInsufficientChipsProtectSeconds()
   loadSoloWaitTimeout()
+  loadQueueKeepSeconds()  // ⭐ 排队保队时间
 })
 </script>
 

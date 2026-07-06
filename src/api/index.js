@@ -239,6 +239,16 @@ export function setSoloWaitTimeout(data) {
   return request.post('/api/system/config/soloWaitTimeout', data)
 }
 
+// ---- 排队保队时间（排队中玩家离线后保留排队资格的秒数，0=离线立即踢队） ----
+
+export function getQueueKeepSeconds() {
+  return request.get('/api/system/config/queueKeepSeconds')
+}
+
+export function setQueueKeepSeconds(seconds) {
+  return request.post('/api/system/config/queueKeepSeconds', { seconds })
+}
+
 // ---- 抽水上限(commission_rate_max) ----
 
 export function getCommissionRateMax() {
