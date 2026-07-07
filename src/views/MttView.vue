@@ -298,6 +298,50 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
+
+        <!-- ===== Tab 6: 流程说明 ===== -->
+        <el-tab-pane label="流程说明" name="guide">
+          <div class="guide">
+            <h3>🔁 三种赛事通用流程</h3>
+            <ol>
+              <li><b>准备</b>：实物赛先到「实物管理」登记奖品；需要机器人的俱乐部先「一键生成机器人」→「生成头像文件夹」放图 →「一键分配资金」（金币赛分金币、钻石/实物赛分钻石，钱从群主转、可对账）</li>
+              <li><b>创建</b>：手动「创建比赛」或「⚡一键建赛(按模板)」或开「自动开赛」保底场次。开赛时间至少 2 分钟后</li>
+              <li><b>报名期</b>：玩家在客户端报名(扣对应货币)，开赛前可随时退赛全额退款；<b>开赛前 5 分钟</b>机器人自动报名（只选自有余额够报名费的）；<b>开赛前 1 分钟</b>停止报名/退赛</li>
+              <li><b>开赛前 60 秒</b>：人数校验——不足下限自动解散全额退费；通过则随机分桌（每桌尽量均匀），推送开赛提醒(360)</li>
+              <li><b>到点开赛</b>：所有比赛桌放行发牌。每局结束比赛桌上报比赛服 → 刷新记分牌 → 判淘汰(记分牌不足下一手门槛直接淘汰,倒序定名次) → 需要时全场暂停拆并桌 → 按时间升底皮(当前局打完生效)</li>
+              <li><b>断线处理</b>：比赛不等人——保留座位自动托管(轮到即丢牌)，底分圈芒照扣直到打光淘汰</li>
+              <li><b>终局</b>：只剩 1 人 → 冠军产生 → 关全部比赛桌 → 按赛事类型结算(见下) → 比赛结束</li>
+            </ol>
+
+            <h3>💰 金币赛（rewardType=1）</h3>
+            <ul>
+              <li>报名扣<b>金币</b>(user.gold, 钻石1:1000单向兑换)；<b>初始记分牌 = 报名费</b>(1记分牌=1金币)</li>
+              <li>记分牌就是钱：输赢在牌局中实时完成，输家的金币被赢家赢走</li>
+              <li><b>冠军通吃</b>：打到最后全场记分牌集中在冠军手里，终局一笔兑付 = 报名人数×报名费 + 固定奖池；其余名次只显示排名不发钱</li>
+              <li>账务：报名 ENTRY_FEE / 退费 ENTRY_REFUND / 冠军 REWARD_PAYOUT，全部 ledger 幂等流水，详情页「对账」Tab 可校验</li>
+            </ul>
+
+            <h3>💎 钻石赛（rewardType=2）</h3>
+            <ul>
+              <li>与金币赛完全同构，货币换成<b>钻石</b>(user.diamond)：钻石报名、记分牌=钻石、冠军通吃兑付钻石</li>
+            </ul>
+
+            <h3>🎁 实物赛（rewardType=3）</h3>
+            <ul>
+              <li>报名扣<b>钻石</b>（=平台留存，不构成货币奖池）；记分牌是<b>纯虚拟计分</b>，比赛结束作废</li>
+              <li>奖品按名次从「实物管理」奖品库选（可配多件：第1名 iPhone、第2名耳机…）</li>
+              <li><b>发放闭环</b>：冠军产生 → 按名次生成发放单(玩家收到到账通知) → 玩家在客户端「我的奖品」填收货地址 → 运营在「发放单」里派送(记快递单号) → 核销完成。虚拟奖品跳过地址直接核销</li>
+              <li>实物赛的机器人输赢控制暂未开放（赢亏配置里占位）</li>
+            </ul>
+
+            <h3>📋 排查工具</h3>
+            <ul>
+              <li><b>比赛日志</b>（服务器 <code>/home/fzcx/chexuan/logs/mtt/</code>）：每场比赛一个文件夹 <code>m{比赛ID}/</code>，里面 <code>match.log</code> 是比赛级全流程，<code>room-{房间号}.log</code> 按房间分开记每局上报/淘汰/迁移/升底皮</li>
+              <li><b>详情弹窗</b>：名次表 / 账务流水(每一笔钱) / 对账不变量校验</li>
+              <li><b>赢亏配置</b>：金币/钻石赛可调机器人收割/放水倾向，保存后 30 秒内生效</li>
+            </ul>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -1210,6 +1254,10 @@ loadClubs()
 .prize-rows { display: flex; flex-direction: column; gap: 6px; }
 .rules-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .avatar-cell { display: flex; justify-content: center; cursor: pointer; }
+.guide { max-width: 860px; line-height: 1.9; font-size: 13px; color: #303133; }
+.guide h3 { margin: 18px 0 8px; font-size: 15px; }
+.guide ol, .guide ul { padding-left: 22px; margin: 6px 0; }
+.guide code { background: #f0f2f5; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
 .avatar-none {
   width: 40px; height: 40px; border-radius: 50%; background: #f0f2f5;
   display: flex; align-items: center; justify-content: center;
