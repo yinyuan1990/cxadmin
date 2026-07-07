@@ -321,6 +321,21 @@ export function mttProfitConfigSave(data) {
   return request.post('/admin/mtt/profitConfig/save', data)
 }
 
+// ---- 实物奖品库（最简 CRUD；建实物赛时下拉选择） ----
+
+export function mttPrizeItemList(all = false) {
+  return request.post('/admin/mtt/prizeItem/list', { all })
+}
+
+export function mttPrizeItemSave(data) {
+  // { id?, name, icon?, detail?, isVirtual?, status? }
+  return request.post('/admin/mtt/prizeItem/save', data)
+}
+
+export function mttPrizeItemDelete(id) {
+  return request.post('/admin/mtt/prizeItem/delete', { id })
+}
+
 export function mttAutoConfigGet(clubId) {
   return request.post('/admin/mtt/autoConfig/get', { clubId })
 }

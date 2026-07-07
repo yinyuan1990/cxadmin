@@ -15,6 +15,7 @@
             </el-select>
             <el-input v-model="clubFilter.keyword" placeholder="ID/编号/名称" size="small" clearable style="width:180px" @keyup.enter="loadClubs" />
             <el-button size="small" :loading="clubLoading" @click="loadClubs">查询</el-button>
+            <el-button type="warning" size="small" @click="openPrizeCatalog">实物奖品库</el-button>
           </div>
         </div>
       </template>
@@ -69,7 +70,10 @@
             <div class="stats-row" v-if="stats">
               <span class="tip">总{{ stats.totalMatches }}场 · 报名中{{ stats.upcoming }} · 进行中{{ stats.playing }} · 已结束{{ stats.finished }} · 累计冠军兑付{{ stats.finishedBonusSum }}</span>
             </div>
-            <el-button type="primary" size="small" @click="openCreate">创建比赛</el-button>
+            <div style="display:flex; gap:8px;">
+              <el-button type="warning" size="small" :loading="quickCreating" @click="quickCreate">⚡ 一键建赛(按模板)</el-button>
+              <el-button type="primary" size="small" @click="openCreate">创建比赛</el-button>
+            </div>
           </div>
           <el-table :data="matches" border size="small" v-loading="loading">
             <el-table-column prop="id" label="ID" width="70" />
@@ -239,11 +243,16 @@
                   <span class="tip">第</span>
                   <el-input-number v-model="p.rank" :min="1" :max="50" size="small" style="width:90px" />
                   <span class="tip">名</span>
-                  <el-input v-model="p.prizeName" placeholder="奖品名称" size="small" style="width:180px" />
-                  <el-checkbox v-model="p.isVirtual" size="small">虚拟</el-checkbox>
+                  <el-select v-model="p.itemId" placeholder="从奖品库选择" size="small" style="width:200px" filterable>
+                    <el-option v-for="item in catalogOn" :key="item.id" :value="item.id"
+                      :label="item.name + (item.isVirtual ? ' (虚拟)' : '')" />
+                  </el-select>
                   <el-button size="small" type="danger" text @click="autoTpl.prizes.splice(i,1)">删除</el-button>
                 </div>
-                <el-button size="small" @click="autoTpl.prizes.push({rank: autoTpl.prizes.length+1, prizeName:'', isVirtual:false})">+ 添加奖品</el-button>
+                <div style="display:flex; gap:8px;">
+                  <el-button size="small" @click="autoTpl.prizes.push({rank: autoTpl.prizes.length+1, itemId: null})">+ 添加奖品</el-button>
+                  <el-button size="small" text type="primary" @click="openPrizeCatalog">管理奖品库</el-button>
+                </div>
               </div>
             </el-form-item>
             <el-form-item label="机器人数">
@@ -258,6 +267,66 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <!-- ================= 实物奖品库管理 ================= -->
+    <el-dialog v-model="catalogVisible" title="实物奖品库" width="760px">
+      <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <span class="tip">建实物赛时奖品从这里下拉选择。已建比赛存的是快照,后改/删奖品不影响历史比赛。</span>
+        <el-button type="primary" size="small" @click="openPrizeItemEdit(null)">+ 添加奖品</el-button>
+      </div>
+      <el-table :data="catalogAll" border size="small" v-loading="catalogLoading" max-height="420">
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column label="图标" width="70" align="center">
+          <template #default="{ row }">
+            <el-image v-if="row.icon" :src="row.icon" style="width:36px;height:36px;border-radius:6px;" fit="cover" />
+            <span v-else class="tip">无</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column prop="detail" label="详情" min-width="160" show-overflow-tooltip />
+        <el-table-column label="类型" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.isVirtual?'info':'warning'">{{ row.isVirtual?'虚拟':'实物' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.status===1?'success':'info'">{{ row.status===1?'上架':'下架' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="openPrizeItemEdit(row)">编辑</el-button>
+            <el-button size="small" :type="row.status===1?'info':'success'" @click="togglePrizeItem(row)">
+              {{ row.status===1?'下架':'上架' }}
+            </el-button>
+            <el-button size="small" type="danger" @click="deletePrizeItem(row)">删</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 奖品新增/编辑 -->
+    <el-dialog v-model="prizeItemEditVisible" :title="prizeItemForm.id ? '编辑奖品' : '添加奖品'" width="440px">
+      <el-form label-width="80px" size="small">
+        <el-form-item label="名称"><el-input v-model="prizeItemForm.name" placeholder="如 iPhone 17" maxlength="64" /></el-form-item>
+        <el-form-item label="图标">
+          <el-input v-model="prizeItemForm.icon" placeholder="图片URL(可留空)" />
+          <el-image v-if="prizeItemForm.icon" :src="prizeItemForm.icon" style="width:48px;height:48px;margin-top:6px;border-radius:6px;" fit="cover" />
+        </el-form-item>
+        <el-form-item label="详情"><el-input v-model="prizeItemForm.detail" type="textarea" :rows="2" placeholder="简介/规格(可留空)" maxlength="512" /></el-form-item>
+        <el-form-item label="类型">
+          <el-radio-group v-model="prizeItemForm.isVirtual">
+            <el-radio :value="false">实物(需收货地址派送)</el-radio>
+            <el-radio :value="true">虚拟(直接核销)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="prizeItemEditVisible=false">取消</el-button>
+        <el-button type="primary" :loading="catalogSaving" @click="savePrizeItem">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- ================= 群主转账弹窗 ================= -->
     <el-dialog v-model="transferVisible" title="群主 → 机器人转账" width="480px">
@@ -331,12 +400,17 @@
               <span class="tip">第</span>
               <el-input-number v-model="p.rank" :min="1" :max="50" size="small" style="width:90px" />
               <span class="tip">名</span>
-              <el-input v-model="p.prizeName" placeholder="奖品名称,如 iPhone 17" size="small" style="width:200px" />
-              <el-checkbox v-model="p.isVirtual" size="small">虚拟</el-checkbox>
+              <el-select v-model="p.itemId" placeholder="从奖品库选择" size="small" style="width:220px" filterable>
+                <el-option v-for="item in catalogOn" :key="item.id" :value="item.id"
+                  :label="item.name + (item.isVirtual ? ' (虚拟)' : '')" />
+              </el-select>
               <el-button size="small" type="danger" text @click="form.prizes.splice(i,1)">删除</el-button>
             </div>
-            <el-button size="small" @click="form.prizes.push({rank: form.prizes.length+1, prizeName:'', isVirtual:false})">+ 添加奖品</el-button>
-            <div class="tip">按名次可配多件。玩家获奖后填收货地址,后台派送</div>
+            <div style="display:flex; gap:8px;">
+              <el-button size="small" @click="form.prizes.push({rank: form.prizes.length+1, itemId: null})">+ 添加奖品</el-button>
+              <el-button size="small" text type="primary" @click="openPrizeCatalog">管理奖品库</el-button>
+            </div>
+            <div class="tip">按名次可配多件。奖品先在「实物奖品库」登记,这里下拉选择。玩家获奖后填收货地址,后台派送</div>
           </div>
         </el-form-item>
         <el-form-item v-if="form.rewardType!==3" :label="'固定奖池(' + feeUnit(form.rewardType) + ')'">
@@ -440,7 +514,8 @@ import {
   mttReconcile, mttStats, mttPrizeGrants, mttPrizeShip, mttPrizeRedeem,
   mttAutoConfigGet, mttAutoConfigSave,
   mttClubs, mttRobotGenerate, mttRobotList, mttOwnerBalance, mttRobotTransfer,
-  mttMembers, mttProfitConfigGet, mttProfitConfigSave
+  mttMembers, mttProfitConfigGet, mttProfitConfigSave,
+  mttPrizeItemList, mttPrizeItemSave, mttPrizeItemDelete
 } from '../api/index'
 
 // ==================== 俱乐部列表 ====================
@@ -526,6 +601,7 @@ function defaultForm() {
 function openCreate() {
   form.value = defaultForm()
   createVisible.value = true
+  loadCatalog() // 奖品下拉数据
 }
 
 async function doCreate() {
@@ -534,9 +610,11 @@ async function doCreate() {
     ElMessage.warning('名称/开赛时间必填')
     return
   }
-  if (f.rewardType === 3 && (!f.prizes.length || f.prizes.some(p => !p.prizeName))) {
-    ElMessage.warning('实物赛必须配奖品清单,且奖品名称不能为空')
-    return
+  let prizeSnapshot = null
+  if (f.rewardType === 3) {
+    if (!f.prizes.length) { ElMessage.warning('实物赛必须配奖品清单'); return }
+    prizeSnapshot = prizesToSnapshot(f.prizes)
+    if (!prizeSnapshot) { ElMessage.warning('有奖品行未从奖品库选择,请补全'); return }
   }
   saving.value = true
   try {
@@ -548,7 +626,7 @@ async function doCreate() {
       rewardType: f.rewardType, initialPool: f.initialPool, robotCount: f.robotCount
     }
     if (f.levelTable) body.levelTable = f.levelTable
-    if (f.rewardType === 3) body.prizeList = JSON.stringify(f.prizes)
+    if (f.rewardType === 3) body.prizeList = prizeSnapshot
     const res = await mttCreate(body)
     if (res.code === 200) {
       ElMessage.success('比赛已创建')
@@ -776,6 +854,7 @@ async function loadAutoConfig() {
   if (!currentClub.value) return
   autoCfg.value = defaultAutoCfg()
   autoTpl.value = defaultAutoTpl()
+  await loadCatalog() // 先有奖品库才能把快照回显成下拉选择
   const res = await mttAutoConfigGet(currentClub.value.id)
   if (res.code === 200 && res.data) {
     const d = res.data
@@ -800,7 +879,7 @@ async function loadAutoConfig() {
           upgradeMinutes: t.upgradeMinutes ?? 10,
           initialPool: t.initialPool ?? 0,
           robotCount: t.robotCount ?? 0,
-          prizes: t.prizeList ? JSON.parse(t.prizeList) : []
+          prizes: t.prizeList ? snapshotToPrizes(JSON.parse(t.prizeList)) : []
         }
       } catch { /* 老数据解析失败用默认 */ }
     }
@@ -809,9 +888,11 @@ async function loadAutoConfig() {
 
 async function saveAutoConfig() {
   const t = autoTpl.value
-  if (t.rewardType === 3 && (!t.prizes.length || t.prizes.some(p => !p.prizeName))) {
-    ElMessage.warning('实物赛模板必须配奖品清单,且奖品名称不能为空')
-    return
+  let prizeSnapshot = null
+  if (t.rewardType === 3) {
+    if (!t.prizes.length) { ElMessage.warning('实物赛模板必须配奖品清单'); return }
+    prizeSnapshot = prizesToSnapshot(t.prizes)
+    if (!prizeSnapshot) { ElMessage.warning('有奖品行未从奖品库选择,请补全'); return }
   }
   saving.value = true
   try {
@@ -822,7 +903,7 @@ async function saveAutoConfig() {
     }
     if (t.rewardType === 3) {
       template.initialScore = t.initialScore
-      template.prizeList = JSON.stringify(t.prizes)
+      template.prizeList = prizeSnapshot
     } else {
       template.initialPool = t.initialPool
     }
@@ -844,6 +925,151 @@ async function saveAutoConfig() {
     ElMessage.error(e.message || '保存失败')
   } finally {
     saving.value = false
+  }
+}
+
+// ==================== 实物奖品库 ====================
+const catalogVisible = ref(false)
+const catalogLoading = ref(false)
+const catalogSaving = ref(false)
+const catalogAll = ref([])   // 管理页：含下架
+const catalogOn = ref([])    // 下拉选择：仅上架
+const prizeItemEditVisible = ref(false)
+const prizeItemForm = ref({ id: null, name: '', icon: '', detail: '', isVirtual: false })
+
+async function loadCatalog() {
+  catalogLoading.value = true
+  try {
+    const [allRes, onRes] = await Promise.all([mttPrizeItemList(true), mttPrizeItemList(false)])
+    if (allRes.code === 200) catalogAll.value = allRes.data || []
+    if (onRes.code === 200) catalogOn.value = onRes.data || []
+  } finally {
+    catalogLoading.value = false
+  }
+}
+
+function openPrizeCatalog() {
+  catalogVisible.value = true
+  loadCatalog()
+}
+
+function openPrizeItemEdit(row) {
+  prizeItemForm.value = row
+    ? { id: row.id, name: row.name, icon: row.icon || '', detail: row.detail || '', isVirtual: !!row.isVirtual }
+    : { id: null, name: '', icon: '', detail: '', isVirtual: false }
+  prizeItemEditVisible.value = true
+}
+
+async function savePrizeItem() {
+  const f = prizeItemForm.value
+  if (!f.name || !f.name.trim()) { ElMessage.warning('奖品名称必填'); return }
+  catalogSaving.value = true
+  try {
+    const res = await mttPrizeItemSave(f)
+    if (res.code === 200) {
+      ElMessage.success('已保存')
+      prizeItemEditVisible.value = false
+      loadCatalog()
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } finally {
+    catalogSaving.value = false
+  }
+}
+
+async function togglePrizeItem(row) {
+  const res = await mttPrizeItemSave({ ...row, status: row.status === 1 ? 0 : 1 })
+  if (res.code === 200) { ElMessage.success(row.status === 1 ? '已下架' : '已上架'); loadCatalog() }
+  else ElMessage.error(res.message || '操作失败')
+}
+
+async function deletePrizeItem(row) {
+  try {
+    await ElMessageBox.confirm(`确认删除奖品「${row.name}」？已建比赛的奖品快照不受影响。`, '删除奖品', { type: 'warning' })
+  } catch { return }
+  const res = await mttPrizeItemDelete(row.id)
+  if (res.code === 200) { ElMessage.success('已删除'); loadCatalog() }
+  else ElMessage.error(res.message || '删除失败')
+}
+
+/** 奖品行（{rank, itemId}）→ prizeList 快照 JSON；未选返回 null */
+function prizesToSnapshot(rows) {
+  const out = []
+  for (const p of rows) {
+    const item = catalogOn.value.find(x => x.id === p.itemId) || catalogAll.value.find(x => x.id === p.itemId)
+    if (!item) return null
+    out.push({ rank: p.rank, prizeName: item.name, prizeIcon: item.icon || '', isVirtual: !!item.isVirtual })
+  }
+  return JSON.stringify(out)
+}
+
+/** prizeList 快照 → 奖品行（编辑回显：按名称匹配奖品库,匹配不上 itemId=null 需重选） */
+function snapshotToPrizes(list) {
+  return (list || []).map(p => {
+    const item = catalogOn.value.find(x => x.name === p.prizeName) || catalogAll.value.find(x => x.name === p.prizeName)
+    return { rank: p.rank, itemId: item ? item.id : null }
+  })
+}
+
+// ==================== ⚡ 一键建赛（按自动开赛模板立即建一场） ====================
+const quickCreating = ref(false)
+
+async function quickCreate() {
+  quickCreating.value = true
+  try {
+    // 拉当前俱乐部的自动开赛模板
+    const res = await mttAutoConfigGet(currentClub.value.id)
+    let t = defaultAutoTpl()
+    let namePrefix = '公开赛'
+    let leadMinutes = 20
+    if (res.code === 200 && res.data) {
+      namePrefix = res.data.namePrefix || '公开赛'
+      leadMinutes = res.data.leadMinutes ?? 20
+      if (res.data.templateJson) {
+        try {
+          const j = JSON.parse(res.data.templateJson)
+          t = { ...t, ...j, prizes: j.prizeList ? JSON.parse(j.prizeList) : [] }
+        } catch { /* 模板损坏用默认 */ }
+      }
+    }
+    const startTime = Date.now() + Math.max(5, leadMinutes) * 60_000
+    const startStr = new Date(startTime)
+    const p = n => String(n).padStart(2, '0')
+    const name = `${namePrefix} ${p(startStr.getHours())}:${p(startStr.getMinutes())} 场`
+
+    try {
+      await ElMessageBox.confirm(
+        `按自动开赛模板立即建一场：\n「${name}」 ${typeName(t.rewardType ?? 1)} · 报名费 ${t.entryFee ?? 1000} ${feeUnit(t.rewardType ?? 1)} · ${Math.max(5, leadMinutes)} 分钟后开赛 · 机器人 ${t.robotCount ?? 0} 个\n确认创建？`,
+        '⚡ 一键建赛', { confirmButtonText: '立即创建', type: 'warning' })
+    } catch { return }
+
+    const body = {
+      name, clubId: currentClub.value.id, startTime,
+      entryFee: t.entryFee ?? 1000, seatNum: t.seatNum ?? 8,
+      lowerLimit: t.lowerLimit ?? 4, upperLimit: t.upperLimit ?? 200,
+      upgradeMinutes: t.upgradeMinutes ?? 10,
+      rewardType: t.rewardType ?? 1, robotCount: t.robotCount ?? 0
+    }
+    if ((t.rewardType ?? 1) === 3) {
+      body.initialScore = t.initialScore ?? 10000
+      body.prizeList = typeof t.prizeList === 'string' && t.prizeList ? t.prizeList : JSON.stringify(t.prizes || [])
+      if (!body.prizeList || body.prizeList === '[]') {
+        ElMessage.warning('自动开赛模板是实物赛但没配奖品清单,请先到「自动开赛」页配好模板')
+        return
+      }
+    } else {
+      body.initialPool = t.initialPool ?? 0
+    }
+    const createRes = await mttCreate(body)
+    if (createRes.code === 200) {
+      ElMessage.success(`已创建「${name}」`)
+      loadMatches()
+    } else {
+      ElMessage.error(createRes.message || '创建失败')
+    }
+  } finally {
+    quickCreating.value = false
   }
 }
 
