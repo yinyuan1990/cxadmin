@@ -75,7 +75,15 @@
               <el-button type="primary" size="small" @click="openCreate">创建比赛</el-button>
             </div>
           </div>
-          <el-table :data="matches" border size="small" v-loading="loading">
+
+          <!-- ⭐ 三种赛事分开看,不混在一起 -->
+          <el-tabs v-model="matchTypeTab" type="card" class="match-type-tabs">
+            <el-tab-pane :label="'💰 金币赛 (' + countByType(1) + ')'" name="1" />
+            <el-tab-pane :label="'💎 钻石赛 (' + countByType(2) + ')'" name="2" />
+            <el-tab-pane :label="'🎁 实物赛 (' + countByType(3) + ')'" name="3" />
+          </el-tabs>
+
+          <el-table :data="filteredMatches" border size="small" v-loading="loading">
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="name" label="名称" min-width="150" />
             <el-table-column label="状态" width="90" align="center">
@@ -640,6 +648,14 @@ const loading = ref(false)
 const saving = ref(false)
 const matches = ref([])
 const stats = ref(null)
+const matchTypeTab = ref('1') // ⭐ 类型子Tab: 1金币赛 2钻石赛 3实物赛
+
+const filteredMatches = computed(() =>
+  matches.value.filter(m => Number(m.rewardType) === Number(matchTypeTab.value)))
+
+function countByType(t) {
+  return matches.value.filter(m => Number(m.rewardType) === t).length
+}
 
 async function loadMatches() {
   if (!currentClub.value) return
@@ -704,6 +720,7 @@ async function doCreate() {
     if (res.code === 200) {
       ElMessage.success('比赛已创建')
       createVisible.value = false
+      matchTypeTab.value = String(f.rewardType) // 切到对应类型Tab
       loadMatches()
     } else {
       ElMessage.error(res.message || '创建失败')
@@ -1215,6 +1232,7 @@ async function quickCreate() {
     const createRes = await mttCreate(body)
     if (createRes.code === 200) {
       ElMessage.success(`已创建「${name}」`)
+      matchTypeTab.value = String(t.rewardType ?? 1) // 切到对应类型Tab
       loadMatches()
     } else {
       ElMessage.error(createRes.message || '创建失败')
@@ -1253,6 +1271,8 @@ loadClubs()
 .profit-card { flex: 1; min-width: 280px; max-width: 380px; }
 .prize-rows { display: flex; flex-direction: column; gap: 6px; }
 .rules-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.match-type-tabs { margin-bottom: 4px; }
+.match-type-tabs :deep(.el-tabs__header) { margin-bottom: 8px; }
 .avatar-cell { display: flex; justify-content: center; cursor: pointer; }
 .guide { max-width: 860px; line-height: 1.9; font-size: 13px; color: #303133; }
 .guide h3 { margin: 18px 0 8px; font-size: 15px; }
