@@ -244,15 +244,14 @@
               <el-input-number v-model="autoTpl.upperLimit" :min="2" style="width:110px" />
             </el-form-item>
             <el-form-item label="升底皮周期(分)"><el-input-number v-model="autoTpl.upgradeMinutes" :min="1" style="width:160px" /></el-form-item>
-            <el-form-item label="玩法">
+            <el-form-item label="玩法(固定)">
               <div class="rules-box">
-                <el-checkbox v-model="autoTpl.rules.quanMang">圈芒</el-checkbox>
-                <el-checkbox v-model="autoTpl.rules.diWang">地王</el-checkbox>
-                <el-checkbox v-model="autoTpl.rules.sanHua">三花</el-checkbox>
-                <el-checkbox v-model="autoTpl.rules.xiuZouMang">休走芒</el-checkbox>
-                <el-checkbox v-model="autoTpl.rules.coverCard">盖牌</el-checkbox>
-                <span class="tip" style="margin-left:4px;">芒果上限</span>
-                <el-input-number v-model="autoTpl.rules.mangoMax" :min="1" :max="99" size="small" style="width:100px" />
+                <el-tag size="small" type="success">圈芒 开</el-tag>
+                <el-tag size="small" type="success">地王 开</el-tag>
+                <el-tag size="small" type="success">三花 开</el-tag>
+                <el-tag size="small" type="info">休走芒 关</el-tag>
+                <el-tag size="small" type="info">盖牌 关</el-tag>
+                <el-tag size="small">芒果上限 5</el-tag>
               </div>
             </el-form-item>
             <el-form-item v-if="autoTpl.rewardType!==3" :label="'固定奖池(' + feeUnit(autoTpl.rewardType) + ')'">
@@ -370,17 +369,16 @@
         <el-form-item label="底皮级别表">
           <el-input v-model="form.levelTable" placeholder='[[1,10],[2,20],[3,30],[4,50],[5,80],[6,120],[7,200]] 空=默认' />
         </el-form-item>
-        <el-form-item label="玩法">
+        <el-form-item label="玩法(固定)">
           <div class="rules-box">
-            <el-checkbox v-model="form.rules.quanMang">圈芒</el-checkbox>
-            <el-checkbox v-model="form.rules.diWang">地王</el-checkbox>
-            <el-checkbox v-model="form.rules.sanHua">三花</el-checkbox>
-            <el-checkbox v-model="form.rules.xiuZouMang">休走芒</el-checkbox>
-            <el-checkbox v-model="form.rules.coverCard">盖牌</el-checkbox>
-            <span class="tip" style="margin-left:4px;">芒果上限</span>
-            <el-input-number v-model="form.rules.mangoMax" :min="1" :max="99" size="small" style="width:100px" />
+            <el-tag size="small" type="success">圈芒 开</el-tag>
+            <el-tag size="small" type="success">地王 开</el-tag>
+            <el-tag size="small" type="success">三花 开</el-tag>
+            <el-tag size="small" type="info">休走芒 关</el-tag>
+            <el-tag size="small" type="info">盖牌 关</el-tag>
+            <el-tag size="small">芒果上限 5</el-tag>
           </div>
-          <div class="tip" style="width:100%;">默认竞技模板：圈芒开 / 地王开 / 三花开 / 休走芒关 / 盖牌关 / 芒果上限5。周期结算、抽水、排队、奖池等在比赛桌强制禁用不可选</div>
+          <div class="tip" style="width:100%;">比赛统一竞技模板,不可改。周期结算、抽水、排队、奖池、丁皇吃席在比赛桌强制禁用</div>
         </el-form-item>
         <el-form-item v-if="form.rewardType===3" label="奖品清单">
           <div class="prize-rows">
@@ -579,19 +577,13 @@ async function loadMatches() {
 const createVisible = ref(false)
 const form = ref(defaultForm())
 
-// 竞技模板默认玩法（与比赛服建桌默认一致）
-function defaultRules() {
-  return { quanMang: true, diWang: true, sanHua: true, xiuZouMang: false, coverCard: false, mangoMax: 5 }
-}
-
 function defaultForm() {
   return {
     name: '', startTimeDate: null,
     entryFee: 1000, initialScore: 10000, seatNum: 8,
     lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
     levelTable: '', rewardType: 1,
-    prizes: [], initialPool: 0, robotCount: 0,
-    rules: defaultRules()
+    prizes: [], initialPool: 0, robotCount: 0
   }
 }
 
@@ -624,7 +616,7 @@ async function doCreate() {
     }
     if (f.levelTable) body.levelTable = f.levelTable
     if (f.rewardType === 3) body.prizeList = prizeSnapshot
-    body.ruleTemplate = JSON.stringify(f.rules)
+    // 玩法固定竞技模板,不提交 ruleTemplate,比赛服建桌用默认值
     const res = await mttCreate(body)
     if (res.code === 200) {
       ElMessage.success('比赛已创建')
@@ -921,8 +913,7 @@ function defaultAutoTpl() {
   return {
     rewardType: 1, entryFee: 1000, initialScore: 10000, seatNum: 8,
     lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
-    initialPool: 0, robotCount: 6, prizes: [],
-    rules: defaultRules()
+    initialPool: 0, robotCount: 6, prizes: []
   }
 }
 
@@ -955,8 +946,7 @@ async function loadAutoConfig() {
           upgradeMinutes: t.upgradeMinutes ?? 10,
           initialPool: t.initialPool ?? 0,
           robotCount: t.robotCount ?? 0,
-          prizes: t.prizeList ? snapshotToPrizes(JSON.parse(t.prizeList)) : [],
-          rules: t.ruleTemplate ? { ...defaultRules(), ...JSON.parse(t.ruleTemplate) } : defaultRules()
+          prizes: t.prizeList ? snapshotToPrizes(JSON.parse(t.prizeList)) : []
         }
       } catch { /* 老数据解析失败用默认 */ }
     }
@@ -976,8 +966,7 @@ async function saveAutoConfig() {
     const template = {
       rewardType: t.rewardType, entryFee: t.entryFee, seatNum: t.seatNum,
       lowerLimit: t.lowerLimit, upperLimit: t.upperLimit,
-      upgradeMinutes: t.upgradeMinutes, robotCount: t.robotCount,
-      ruleTemplate: JSON.stringify(t.rules || defaultRules())
+      upgradeMinutes: t.upgradeMinutes, robotCount: t.robotCount
     }
     if (t.rewardType === 3) {
       template.initialScore = t.initialScore
