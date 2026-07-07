@@ -285,6 +285,42 @@ export function mttPrizeRedeem(grantId, operator) {
   return request.post('/admin/mtt/prizeRedeem', { grantId, operator })
 }
 
+// ---- MTT 俱乐部维度管理（机器人/成员/赢亏配置，主服直出不走比赛服） ----
+
+export function mttClubs(params) {
+  // { type?, keyword?, page, size }
+  return request.post('/admin/mtt/clubs', params || {})
+}
+
+export function mttRobotGenerate(clubId, count) {
+  return request.post('/admin/mtt/robot/generate', { clubId, count })
+}
+
+export function mttRobotList(clubId, page = 0, size = 50) {
+  return request.post('/admin/mtt/robot/list', { clubId, page, size })
+}
+
+export function mttOwnerBalance(clubId) {
+  return request.post('/admin/mtt/robot/ownerBalance', { clubId })
+}
+
+export function mttRobotTransfer(clubId, currency, amountPerRobot, userIds) {
+  return request.post('/admin/mtt/robot/transfer', { clubId, currency, amountPerRobot, userIds })
+}
+
+export function mttMembers(clubId, page = 0, size = 50) {
+  return request.post('/admin/mtt/members', { clubId, page, size })
+}
+
+export function mttProfitConfigGet(clubId) {
+  return request.post('/admin/mtt/profitConfig/get', { clubId })
+}
+
+export function mttProfitConfigSave(data) {
+  // { clubId, rewardType, enabled, winBias, remark? }
+  return request.post('/admin/mtt/profitConfig/save', data)
+}
+
 export function mttAutoConfigGet(clubId) {
   return request.post('/admin/mtt/autoConfig/get', { clubId })
 }

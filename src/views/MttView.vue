@@ -1,71 +1,292 @@
 <template>
   <div class="mtt-page">
-    <el-card class="page-card">
+
+    <!-- ================= 视图1：俱乐部列表（入口） ================= -->
+    <el-card v-if="!currentClub" class="page-card">
       <template #header>
         <div class="card-header">
-          <span class="title">MTT 比赛管理</span>
+          <span class="title">MTT 比赛管理 · 俱乐部列表</span>
           <div style="display:flex; gap:8px; align-items:center;">
-            <el-input v-model="clubIdFilter" placeholder="按俱乐部ID筛选(空=全部)" size="small" clearable style="width:200px;" @clear="load" @keyup.enter="load" />
-            <el-button size="small" :loading="loading" @click="load">查询</el-button>
-            <el-button type="warning" size="small" @click="openAutoConfig">自动开赛配置</el-button>
-            <el-button type="primary" size="small" @click="openCreate">创建比赛</el-button>
+            <el-select v-model="clubFilter.type" placeholder="类型" size="small" clearable style="width:140px" @change="loadClubs">
+              <el-option label="全部类型" :value="''" />
+              <el-option label="大联盟(公共)" :value="3" />
+              <el-option label="联盟" :value="2" />
+              <el-option label="普通" :value="1" />
+            </el-select>
+            <el-input v-model="clubFilter.keyword" placeholder="ID/编号/名称" size="small" clearable style="width:180px" @keyup.enter="loadClubs" />
+            <el-button size="small" :loading="clubLoading" @click="loadClubs">查询</el-button>
           </div>
         </div>
       </template>
 
-      <!-- 统计卡片 -->
-      <div class="stats-row" v-if="stats">
-        <div class="stat-card"><div class="num">{{ stats.totalMatches }}</div><div class="lab">总场次</div></div>
-        <div class="stat-card"><div class="num" style="color:#409EFF">{{ stats.upcoming }}</div><div class="lab">报名中</div></div>
-        <div class="stat-card"><div class="num" style="color:#E6A23C">{{ stats.playing }}</div><div class="lab">进行中</div></div>
-        <div class="stat-card"><div class="num" style="color:#67C23A">{{ stats.finished }}</div><div class="lab">已结束</div></div>
-        <div class="stat-card"><div class="num" style="color:#909399">{{ stats.dismissed }}</div><div class="lab">已解散</div></div>
-        <div class="stat-card"><div class="num">{{ stats.finishedBonusSum }}</div><div class="lab">累计奖池(已结束)</div></div>
-        <div class="stat-card"><div class="num">{{ stats.finishedParticipantsSum }}</div><div class="lab">累计参赛人次</div></div>
-      </div>
-
-      <!-- 比赛列表 -->
-      <el-table :data="matches" border size="small" style="width:100%; margin-top:12px;">
+      <el-table :data="clubList" border size="small" v-loading="clubLoading">
         <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="name" label="名称" min-width="150" />
-        <el-table-column prop="clubId" label="俱乐部" width="80" />
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column prop="no" label="编号" width="90" />
+        <el-table-column prop="name" label="名称" min-width="140" />
+        <el-table-column label="类型" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+            <el-tag size="small" :type="row.type===3?'danger':(row.type===2?'warning':'info')">{{ row.typeName }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="开赛时间" width="150">
-          <template #default="{ row }">{{ fmtTime(row.startTime) }}</template>
-        </el-table-column>
-        <el-table-column label="报名费" width="120">
-          <template #default="{ row }">{{ row.entryFee }} {{ feeUnit(row.rewardType) }}</template>
-        </el-table-column>
-        <el-table-column prop="initialScore" label="初始记分牌" width="100" />
-        <el-table-column label="类型" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.rewardType===1?'info':(row.rewardType===2?'warning':'danger')">
-              {{ row.rewardType===1?'金币赛':(row.rewardType===2?'钻石赛':'实物赛') }}
-            </el-tag>
-          </template>
-        </el-table-column>
+        <el-table-column prop="ownerName" label="群主" width="110" />
+        <el-table-column prop="memberCount" label="成员" width="70" align="center" />
         <el-table-column prop="robotCount" label="机器人" width="80" align="center" />
-        <el-table-column prop="participants" label="参赛" width="70" align="center" />
-        <el-table-column prop="totalBonus" label="冠军兑付" width="90" />
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
-            <el-button size="small" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="row.rewardType===3" size="small" type="warning" @click="openPrizes(row)">发放单</el-button>
-            <el-button v-if="row.status===1 || row.status===2" size="small" type="danger" @click="doCancel(row)">取消</el-button>
+            <el-tag size="small" :type="row.state===1?'success':'danger'">{{ row.state===1?'正常':(row.state===2?'已解散':'禁用') }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" @click="enterClub(row)">进入管理</el-button>
           </template>
         </el-table-column>
       </el-table>
+
+      <el-pagination style="margin-top:12px; justify-content:flex-end;" layout="total, prev, pager, next"
+        :total="clubTotal" :page-size="clubFilter.size" :current-page="clubFilter.page + 1"
+        @current-change="p => { clubFilter.page = p - 1; loadClubs() }" />
     </el-card>
 
-    <!-- 创建比赛 -->
+    <!-- ================= 视图2：单俱乐部 MTT 管理 ================= -->
+    <el-card v-else class="page-card">
+      <template #header>
+        <div class="card-header">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <el-button size="small" @click="backToClubs">← 返回俱乐部列表</el-button>
+            <span class="title">{{ currentClub.name }}</span>
+            <el-tag size="small" :type="currentClub.type===3?'danger':'info'">{{ currentClub.typeName }}</el-tag>
+            <span class="tip">群主: {{ currentClub.ownerName }} (uid={{ currentClub.ownerId }})</span>
+          </div>
+        </div>
+      </template>
+
+      <el-tabs v-model="activeTab" @tab-change="onTabChange">
+
+        <!-- ===== Tab 1: 比赛列表 ===== -->
+        <el-tab-pane label="比赛列表" name="matches">
+          <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+            <div class="stats-row" v-if="stats">
+              <span class="tip">总{{ stats.totalMatches }}场 · 报名中{{ stats.upcoming }} · 进行中{{ stats.playing }} · 已结束{{ stats.finished }} · 累计冠军兑付{{ stats.finishedBonusSum }}</span>
+            </div>
+            <el-button type="primary" size="small" @click="openCreate">创建比赛</el-button>
+          </div>
+          <el-table :data="matches" border size="small" v-loading="loading">
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="name" label="名称" min-width="150" />
+            <el-table-column label="状态" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag :type="statusTag(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="开赛时间" width="130">
+              <template #default="{ row }">{{ fmtTime(row.startTime) }}</template>
+            </el-table-column>
+            <el-table-column label="报名费" width="110">
+              <template #default="{ row }">{{ row.entryFee }} {{ feeUnit(row.rewardType) }}</template>
+            </el-table-column>
+            <el-table-column label="类型" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.rewardType===1?'info':(row.rewardType===2?'warning':'danger')">
+                  {{ typeName(row.rewardType) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="robotCount" label="机器人" width="80" align="center" />
+            <el-table-column prop="participants" label="参赛" width="70" align="center" />
+            <el-table-column prop="totalBonus" label="冠军兑付" width="90" />
+            <el-table-column label="操作" width="220" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" @click="openDetail(row)">详情</el-button>
+                <el-button v-if="row.rewardType===3" size="small" type="warning" @click="openPrizes(row)">发放单</el-button>
+                <el-button v-if="row.status===1 || row.status===2" size="small" type="danger" @click="doCancel(row)">取消</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- ===== Tab 2: MTT 机器人 ===== -->
+        <el-tab-pane label="MTT机器人" name="robots">
+          <el-alert type="info" :closable="false" style="margin-bottom:12px;"
+            title="机器人的金币/钻石只能由群主转账（余额校验+双边流水,可查可对账）,系统不凭空发钱。金币赛报名扣机器人金币,钻石赛/实物赛扣钻石;余额不够的机器人不会自动报名。" />
+
+          <div class="robot-toolbar">
+            <el-card shadow="never" class="owner-card" v-if="ownerBal">
+              <span style="font-weight:600;">群主余额：</span>
+              <el-tag type="warning" size="large">金币 {{ ownerBal.gold }}</el-tag>
+              <el-tag type="primary" size="large" style="margin-left:8px;">钻石 {{ ownerBal.diamond }}</el-tag>
+              <el-button size="small" style="margin-left:12px;" @click="loadOwnerBalance">刷新</el-button>
+            </el-card>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <el-input-number v-model="genCount" :min="1" :max="500" size="small" style="width:130px" />
+              <el-button type="primary" size="small" :loading="robotWorking" @click="doGenerate">一键生成机器人</el-button>
+              <el-button type="warning" size="small" @click="transferVisible = true">群主转账 →</el-button>
+            </div>
+          </div>
+
+          <el-table :data="robots" border size="small" v-loading="robotLoading" style="margin-top:10px;">
+            <el-table-column prop="userId" label="userId" width="90" />
+            <el-table-column prop="nickname" label="昵称" min-width="110" />
+            <el-table-column prop="gold" label="金币" width="110" />
+            <el-table-column prop="diamond" label="钻石" width="110" />
+            <el-table-column prop="clubScore" label="俱乐部积分" width="110" />
+          </el-table>
+          <el-pagination style="margin-top:10px; justify-content:flex-end;" layout="total, prev, pager, next"
+            :total="robotTotal" :page-size="robotPage.size" :current-page="robotPage.page + 1"
+            @current-change="p => { robotPage.page = p - 1; loadRobots() }" />
+        </el-tab-pane>
+
+        <!-- ===== Tab 3: 成员列表 ===== -->
+        <el-tab-pane label="成员列表" name="members">
+          <el-table :data="members" border size="small" v-loading="memberLoading">
+            <el-table-column prop="userId" label="userId" width="90" />
+            <el-table-column prop="nickname" label="昵称" min-width="110" />
+            <el-table-column label="角色" width="80" align="center">
+              <template #default="{ row }">{{ roleName(row.role) }}</template>
+            </el-table-column>
+            <el-table-column label="身份" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.isRobot?'warning':'success'">{{ row.isRobot?'机器人':'真人' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="gold" label="金币" width="110" />
+            <el-table-column prop="diamond" label="钻石" width="110" />
+            <el-table-column prop="clubScore" label="俱乐部积分" width="110" />
+          </el-table>
+          <el-pagination style="margin-top:10px; justify-content:flex-end;" layout="total, prev, pager, next"
+            :total="memberTotal" :page-size="memberPage.size" :current-page="memberPage.page + 1"
+            @current-change="p => { memberPage.page = p - 1; loadMembers() }" />
+        </el-tab-pane>
+
+        <!-- ===== Tab 4: 赢亏配置（三类别） ===== -->
+        <el-tab-pane label="赢亏配置" name="profit">
+          <el-alert type="info" :closable="false" style="margin-bottom:12px;"
+            title="控制机器人在本俱乐部 MTT 比赛里的打法倾向：收割=机器人弱牌早丢/强牌加注,更容易拿名次;放水=机器人强牌保守/弱牌多跟,真人更容易赢。不改发牌、不看底牌,只调机器人自己打法。" />
+          <div class="profit-cards">
+            <el-card v-for="cfg in profitConfigs" :key="cfg.rewardType" shadow="never" class="profit-card">
+              <template #header>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-weight:600;">{{ typeName(cfg.rewardType) }}</span>
+                  <el-tag v-if="cfg.rewardType===3" type="info" size="small">输赢控制后期开放</el-tag>
+                  <el-switch v-else v-model="cfg.enabled" active-text="启用" />
+                </div>
+              </template>
+              <template v-if="cfg.rewardType!==3">
+                <div style="margin-bottom:6px;" class="tip">
+                  机器人倾向：<b :style="{color: cfg.winBias>0?'#F56C6C':(cfg.winBias<0?'#67C23A':'#909399')}">
+                  {{ cfg.winBias>0?('收割 +'+cfg.winBias):(cfg.winBias<0?('放水 '+cfg.winBias):'公平 0') }}</b>
+                </div>
+                <el-slider v-model="cfg.winBias" :min="-100" :max="100" :step="5" :disabled="!cfg.enabled"
+                  :marks="{'-100':'放水', 0:'公平', 100:'收割'}" style="margin:0 12px 18px;" />
+                <el-button type="primary" size="small" :loading="profitSaving" @click="saveProfit(cfg)">保存</el-button>
+              </template>
+              <template v-else>
+                <div class="tip" style="padding:12px 0;">实物赛的输赢控制一期占位，后期版本开放。当前实物赛机器人按牌力公平打。</div>
+              </template>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <!-- ===== Tab 5: 自动开赛 ===== -->
+        <el-tab-pane label="自动开赛" name="auto">
+          <el-alert type="info" :closable="false" style="margin-bottom:12px;"
+            title="开启后本俱乐部「报名中」的比赛少于保底场次时自动按下方模板补建,保证赛事列表不空。公共俱乐部建议开启并配机器人数。" />
+          <el-form label-width="130px" size="small" style="max-width:680px;">
+            <el-form-item label="开关">
+              <el-switch v-model="autoCfg.enabled" active-text="开启" inactive-text="关闭" />
+            </el-form-item>
+            <el-form-item label="保底未开赛场次"><el-input-number v-model="autoCfg.minUpcoming" :min="1" :max="10" style="width:160px" /></el-form-item>
+            <el-form-item label="报名期(分钟)"><el-input-number v-model="autoCfg.leadMinutes" :min="5" :max="720" style="width:160px" /></el-form-item>
+            <el-form-item label="场次间隔(分钟)"><el-input-number v-model="autoCfg.intervalMinutes" :min="10" :max="1440" style="width:160px" /></el-form-item>
+            <el-form-item label="名称前缀"><el-input v-model="autoCfg.namePrefix" style="width:220px" placeholder="公开赛" /></el-form-item>
+
+            <el-divider content-position="left">比赛模板（自动建赛用这套参数）</el-divider>
+
+            <el-form-item label="赛事类型">
+              <el-radio-group v-model="autoTpl.rewardType">
+                <el-radio :value="1">金币赛(冠军通吃)</el-radio>
+                <el-radio :value="2">钻石赛(冠军通吃)</el-radio>
+                <el-radio :value="3">实物赛(按名次发实物)</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item :label="'报名费(' + feeUnit(autoTpl.rewardType) + ')'">
+              <el-input-number v-model="autoTpl.entryFee" :min="autoTpl.rewardType===3?0:1" :step="autoTpl.rewardType===1?100:1" style="width:160px" />
+              <span v-if="autoTpl.rewardType!==3" class="tip">记分牌=报名费(1:1)</span>
+            </el-form-item>
+            <el-form-item v-if="autoTpl.rewardType===3" label="初始记分牌">
+              <el-input-number v-model="autoTpl.initialScore" :min="1000" :step="1000" style="width:160px" />
+              <span class="tip">实物赛纯虚拟计分</span>
+            </el-form-item>
+            <el-form-item label="桌型">
+              <el-radio-group v-model="autoTpl.seatNum">
+                <el-radio :value="6">6人桌</el-radio>
+                <el-radio :value="8">8人桌</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="人数下限/上限">
+              <el-input-number v-model="autoTpl.lowerLimit" :min="2" style="width:110px" />
+              <span style="margin:0 8px">~</span>
+              <el-input-number v-model="autoTpl.upperLimit" :min="2" style="width:110px" />
+            </el-form-item>
+            <el-form-item label="升底皮周期(分)"><el-input-number v-model="autoTpl.upgradeMinutes" :min="1" style="width:160px" /></el-form-item>
+            <el-form-item v-if="autoTpl.rewardType!==3" :label="'固定奖池(' + feeUnit(autoTpl.rewardType) + ')'">
+              <el-input-number v-model="autoTpl.initialPool" :min="0" :step="1000" style="width:160px" />
+              <span class="tip">叠加进冠军兑付</span>
+            </el-form-item>
+            <el-form-item v-if="autoTpl.rewardType===3" label="奖品清单">
+              <div class="prize-rows">
+                <div v-for="(p, i) in autoTpl.prizes" :key="i" class="prize-row">
+                  <span class="tip">第</span>
+                  <el-input-number v-model="p.rank" :min="1" :max="50" size="small" style="width:90px" />
+                  <span class="tip">名</span>
+                  <el-input v-model="p.prizeName" placeholder="奖品名称" size="small" style="width:180px" />
+                  <el-checkbox v-model="p.isVirtual" size="small">虚拟</el-checkbox>
+                  <el-button size="small" type="danger" text @click="autoTpl.prizes.splice(i,1)">删除</el-button>
+                </div>
+                <el-button size="small" @click="autoTpl.prizes.push({rank: autoTpl.prizes.length+1, prizeName:'', isVirtual:false})">+ 添加奖品</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="机器人数">
+              <el-input-number v-model="autoTpl.robotCount" :min="0" :max="200" style="width:160px" />
+              <span class="tip">开赛前5分钟自动报名(需机器人自有余额够报名费)</span>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button type="primary" :loading="saving" @click="saveAutoConfig">保存自动开赛配置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <!-- ================= 群主转账弹窗 ================= -->
+    <el-dialog v-model="transferVisible" title="群主 → 机器人转账" width="480px">
+      <el-alert type="warning" :closable="false" style="margin-bottom:12px;"
+        :title="'群主余额：金币 ' + (ownerBal?.gold ?? '-') + ' / 钻石 ' + (ownerBal?.diamond ?? '-') + '。余额不足会直接报错;金币不够可先让群主用钻石兑换。'" />
+      <el-form label-width="120px" size="small">
+        <el-form-item label="转什么">
+          <el-radio-group v-model="transferForm.currency">
+            <el-radio value="GOLD">金币(金币赛报名用)</el-radio>
+            <el-radio value="DIAMOND">钻石(钻石/实物赛用)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="每个机器人">
+          <el-input-number v-model="transferForm.amountPerRobot" :min="1" :step="transferForm.currency==='GOLD'?1000:10" style="width:180px" />
+        </el-form-item>
+        <el-form-item label="转给谁">
+          <span class="tip">该俱乐部全部机器人（共 {{ robotTotal }} 个），合计 {{ (transferForm.amountPerRobot || 0) * robotTotal }}</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferVisible=false">取消</el-button>
+        <el-button type="primary" :loading="robotWorking" @click="doTransfer">确认转账</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ================= 创建比赛弹窗 ================= -->
     <el-dialog v-model="createVisible" title="创建比赛" width="620px">
       <el-form :model="form" label-width="130px" size="small">
         <el-form-item label="名称"><el-input v-model="form.name" placeholder="周末千分锦标赛" /></el-form-item>
-        <el-form-item label="俱乐部ID"><el-input-number v-model="form.clubId" :min="1" style="width:180px" /></el-form-item>
         <el-form-item label="开赛时间">
           <el-date-picker v-model="form.startTimeDate" type="datetime" placeholder="选择开赛时间" style="width:220px" />
         </el-form-item>
@@ -78,12 +299,12 @@
         </el-form-item>
         <el-form-item :label="'报名费(' + feeUnit(form.rewardType) + ')'">
           <el-input-number v-model="form.entryFee" :min="form.rewardType===3?0:1" :step="form.rewardType===1?100:1" style="width:180px" />
-          <span class="tip" v-if="form.rewardType===1">金币由钻石兑换(默认1钻=1000金币,系统配置可调)</span>
+          <span class="tip" v-if="form.rewardType===1">金币由钻石兑换(默认1钻=1000金币)</span>
           <span class="tip" v-else>直接扣玩家钻石</span>
         </el-form-item>
         <el-form-item v-if="form.rewardType!==3" label="初始记分牌">
           <el-input :model-value="form.entryFee + ' (=报名费)'" disabled style="width:180px" />
-          <span class="tip">记分牌即货币:1记分牌=1{{ feeUnit(form.rewardType) }},输赢即钱的流动,冠军兑付全部记分牌</span>
+          <span class="tip">记分牌即货币,冠军兑付全部记分牌</span>
         </el-form-item>
         <el-form-item v-else label="初始记分牌">
           <el-input-number v-model="form.initialScore" :min="1000" :step="1000" style="width:180px" />
@@ -105,9 +326,18 @@
           <el-input v-model="form.levelTable" placeholder='[[1,10],[2,20],[3,30],[4,50],[5,80],[6,120],[7,200]] 空=默认' />
         </el-form-item>
         <el-form-item v-if="form.rewardType===3" label="奖品清单">
-          <el-input v-model="form.prizeList" type="textarea" :rows="3"
-            placeholder='按名次配多件: [{"rank":1,"prizeName":"iPhone 17","prizeIcon":"","isVirtual":false},{"rank":2,"prizeName":"AirPods","prizeIcon":"","isVirtual":false}]' />
-          <span class="tip">实物赛必填。玩家获奖后填收货地址,后台派送</span>
+          <div class="prize-rows">
+            <div v-for="(p, i) in form.prizes" :key="i" class="prize-row">
+              <span class="tip">第</span>
+              <el-input-number v-model="p.rank" :min="1" :max="50" size="small" style="width:90px" />
+              <span class="tip">名</span>
+              <el-input v-model="p.prizeName" placeholder="奖品名称,如 iPhone 17" size="small" style="width:200px" />
+              <el-checkbox v-model="p.isVirtual" size="small">虚拟</el-checkbox>
+              <el-button size="small" type="danger" text @click="form.prizes.splice(i,1)">删除</el-button>
+            </div>
+            <el-button size="small" @click="form.prizes.push({rank: form.prizes.length+1, prizeName:'', isVirtual:false})">+ 添加奖品</el-button>
+            <div class="tip">按名次可配多件。玩家获奖后填收货地址,后台派送</div>
+          </div>
         </el-form-item>
         <el-form-item v-if="form.rewardType!==3" :label="'固定奖池(' + feeUnit(form.rewardType) + ')'">
           <el-input-number v-model="form.initialPool" :min="0" :step="1000" style="width:180px" />
@@ -115,7 +345,7 @@
         </el-form-item>
         <el-form-item label="机器人数">
           <el-input-number v-model="form.robotCount" :min="0" :max="200" style="width:180px" />
-          <span class="tip">开赛前5分钟自动报名(公共俱乐部撑场用)</span>
+          <span class="tip">开赛前5分钟自动报名(需机器人自有余额够报名费)</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -124,7 +354,7 @@
       </template>
     </el-dialog>
 
-    <!-- 详情 -->
+    <!-- ================= 比赛详情 ================= -->
     <el-dialog v-model="detailVisible" :title="'比赛详情 #' + (detail?.id || '')" width="760px">
       <template v-if="detail">
         <el-descriptions :column="3" size="small" border>
@@ -133,7 +363,7 @@
           <el-descriptions-item label="开赛">{{ fmtTime(detail.startTime) }}</el-descriptions-item>
           <el-descriptions-item label="报名数">{{ detail.registeredCount }}</el-descriptions-item>
           <el-descriptions-item label="存活">{{ detail.aliveCount }}</el-descriptions-item>
-          <el-descriptions-item label="奖池">{{ detail.totalBonus ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="冠军兑付">{{ detail.totalBonus ?? '-' }}</el-descriptions-item>
         </el-descriptions>
 
         <el-tabs style="margin-top:10px;">
@@ -167,7 +397,7 @@
       </template>
     </el-dialog>
 
-    <!-- 实物发放单（含收货地址 + 派送） -->
+    <!-- ================= 实物发放单 ================= -->
     <el-dialog v-model="prizesVisible" title="实物发放单" width="960px">
       <el-table :data="prizes" border size="small">
         <el-table-column prop="rankNo" label="名次" width="60" align="center" />
@@ -199,94 +429,76 @@
         </el-table-column>
       </el-table>
     </el-dialog>
-
-    <!-- 自动开赛配置（热闹机制） -->
-    <el-dialog v-model="autoVisible" title="自动开赛配置（热闹机制）" width="620px">
-      <div class="tip" style="margin-bottom:10px;">
-        默认<b>关闭</b>。开启后该俱乐部"报名中"的比赛少于 N 场时自动按模板补建，保证赛事列表永不空。
-        公共俱乐部(大联盟)建议开启并在模板里配机器人数；真人俱乐部群主也可自己手动建赛，两者共存。
-      </div>
-      <el-form label-width="140px" size="small">
-        <el-form-item label="俱乐部ID">
-          <el-input-number v-model="autoCfg.clubId" :min="1" style="width:180px" />
-          <el-button size="small" style="margin-left:8px" @click="loadAutoConfig">读取</el-button>
-        </el-form-item>
-        <el-form-item label="开关">
-          <el-switch v-model="autoCfg.enabled" active-text="开启" inactive-text="关闭" />
-        </el-form-item>
-        <el-form-item label="保底未开赛场次"><el-input-number v-model="autoCfg.minUpcoming" :min="1" :max="10" style="width:180px" /></el-form-item>
-        <el-form-item label="报名期(分钟)"><el-input-number v-model="autoCfg.leadMinutes" :min="5" :max="720" style="width:180px" /></el-form-item>
-        <el-form-item label="场次间隔(分钟)"><el-input-number v-model="autoCfg.intervalMinutes" :min="10" :max="1440" style="width:180px" /></el-form-item>
-        <el-form-item label="名称前缀"><el-input v-model="autoCfg.namePrefix" style="width:220px" placeholder="公开赛" /></el-form-item>
-        <el-form-item label="比赛模板JSON">
-          <el-input v-model="autoCfg.templateJson" type="textarea" :rows="4"
-            placeholder='{"entryFee":1000,"seatNum":8,"lowerLimit":4,"upperLimit":200,"upgradeMinutes":10,"rewardType":1,"robotCount":6}  rewardType:1金币赛 2钻石赛(冠军通吃,记分牌=报名费) 3实物赛(需prizeList+initialScore)' />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="autoVisible=false">关闭</el-button>
-        <el-button type="primary" :loading="saving" @click="saveAutoConfig">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   mttList, mttCreate, mttCancel, mttDetail, mttCompetitors, mttLedger,
   mttReconcile, mttStats, mttPrizeGrants, mttPrizeShip, mttPrizeRedeem,
-  mttAutoConfigGet, mttAutoConfigSave
+  mttAutoConfigGet, mttAutoConfigSave,
+  mttClubs, mttRobotGenerate, mttRobotList, mttOwnerBalance, mttRobotTransfer,
+  mttMembers, mttProfitConfigGet, mttProfitConfigSave
 } from '../api/index'
 
-const loading = ref(false)
-const saving = ref(false)
-const clubIdFilter = ref('')
-const matches = ref([])
-const stats = ref(null)
+// ==================== 俱乐部列表 ====================
+const clubLoading = ref(false)
+const clubList = ref([])
+const clubTotal = ref(0)
+const clubFilter = ref({ type: '', keyword: '', page: 0, size: 20 })
+const currentClub = ref(null)
+const activeTab = ref('matches')
 
-const createVisible = ref(false)
-const detailVisible = ref(false)
-const prizesVisible = ref(false)
-const autoVisible = ref(false)
-
-const detail = ref(null)
-const competitors = ref([])
-const ledger = ref([])
-const reconcile = ref(null)
-const prizes = ref([])
-
-const form = ref(defaultForm())
-const autoCfg = ref({ clubId: null, enabled: false, minUpcoming: 2, leadMinutes: 20, intervalMinutes: 60, namePrefix: '公开赛', templateJson: '' })
-
-function defaultForm() {
-  return {
-    name: '', clubId: null, startTimeDate: null,
-    entryFee: 1000, initialScore: 10000, seatNum: 8,
-    lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
-    levelTable: '', rewardType: 1,
-    prizeList: '', initialPool: 0, robotCount: 0
+async function loadClubs() {
+  clubLoading.value = true
+  try {
+    const body = { page: clubFilter.value.page, size: clubFilter.value.size }
+    if (clubFilter.value.type !== '' && clubFilter.value.type != null) body.type = clubFilter.value.type
+    if (clubFilter.value.keyword) body.keyword = clubFilter.value.keyword
+    const res = await mttClubs(body)
+    if (res.code === 200 && res.data) {
+      clubList.value = res.data.list || []
+      clubTotal.value = res.data.total || 0
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '加载俱乐部失败')
+  } finally {
+    clubLoading.value = false
   }
 }
 
-function statusText(s) { return { 0: '已结束', 1: '报名中', 2: '进行中', 3: '已解散' }[s] ?? s }
-function statusTag(s) { return { 0: 'success', 1: 'info', 2: 'warning', 3: 'danger' }[s] ?? 'info' }
-// 报名费货币单位：金币赛=金币；钻石赛/实物赛=钻石
-function feeUnit(rewardType) { return rewardType === 1 ? '金币' : '钻石' }
-function prizeStatusText(s) { return { GRANTED: '待派送', SHIPPED: '已派送', REDEEMED: '已兑付' }[s] ?? s }
-function prizeStatusTag(s) { return { GRANTED: 'warning', SHIPPED: 'primary', REDEEMED: 'success' }[s] ?? 'info' }
-function fmtTime(ms) {
-  if (!ms) return '-'
-  const d = new Date(Number(ms))
-  const p = n => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+function enterClub(club) {
+  currentClub.value = club
+  activeTab.value = 'matches'
+  loadMatches()
 }
 
-async function load() {
+function backToClubs() {
+  currentClub.value = null
+  loadClubs()
+}
+
+function onTabChange(tab) {
+  if (tab === 'matches') loadMatches()
+  else if (tab === 'robots') { loadRobots(); loadOwnerBalance() }
+  else if (tab === 'members') loadMembers()
+  else if (tab === 'profit') loadProfitConfigs()
+  else if (tab === 'auto') loadAutoConfig()
+}
+
+// ==================== 比赛列表 ====================
+const loading = ref(false)
+const saving = ref(false)
+const matches = ref([])
+const stats = ref(null)
+
+async function loadMatches() {
+  if (!currentClub.value) return
   loading.value = true
   try {
-    const clubId = clubIdFilter.value ? Number(clubIdFilter.value) : null
+    const clubId = currentClub.value.id
     const [listRes, statsRes] = await Promise.all([mttList(clubId), mttStats(clubId)])
     if (listRes.code === 200) matches.value = listRes.data || []
     if (statsRes.code === 200) stats.value = statsRes.data
@@ -297,29 +509,51 @@ async function load() {
   }
 }
 
+// ==================== 创建比赛 ====================
+const createVisible = ref(false)
+const form = ref(defaultForm())
+
+function defaultForm() {
+  return {
+    name: '', startTimeDate: null,
+    entryFee: 1000, initialScore: 10000, seatNum: 8,
+    lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
+    levelTable: '', rewardType: 1,
+    prizes: [], initialPool: 0, robotCount: 0
+  }
+}
+
 function openCreate() {
   form.value = defaultForm()
-  if (clubIdFilter.value) form.value.clubId = Number(clubIdFilter.value)
   createVisible.value = true
 }
 
 async function doCreate() {
   const f = form.value
-  if (!f.name || !f.clubId || !f.startTimeDate) {
-    ElMessage.warning('名称/俱乐部ID/开赛时间必填')
+  if (!f.name || !f.startTimeDate) {
+    ElMessage.warning('名称/开赛时间必填')
+    return
+  }
+  if (f.rewardType === 3 && (!f.prizes.length || f.prizes.some(p => !p.prizeName))) {
+    ElMessage.warning('实物赛必须配奖品清单,且奖品名称不能为空')
     return
   }
   saving.value = true
   try {
-    const body = { ...f, startTime: new Date(f.startTimeDate).getTime() }
-    delete body.startTimeDate
-    if (!body.levelTable) delete body.levelTable
-    if (!body.prizeList) delete body.prizeList
+    const body = {
+      name: f.name, clubId: currentClub.value.id,
+      startTime: new Date(f.startTimeDate).getTime(),
+      entryFee: f.entryFee, initialScore: f.initialScore, seatNum: f.seatNum,
+      lowerLimit: f.lowerLimit, upperLimit: f.upperLimit, upgradeMinutes: f.upgradeMinutes,
+      rewardType: f.rewardType, initialPool: f.initialPool, robotCount: f.robotCount
+    }
+    if (f.levelTable) body.levelTable = f.levelTable
+    if (f.rewardType === 3) body.prizeList = JSON.stringify(f.prizes)
     const res = await mttCreate(body)
     if (res.code === 200) {
       ElMessage.success('比赛已创建')
       createVisible.value = false
-      load()
+      loadMatches()
     } else {
       ElMessage.error(res.message || '创建失败')
     }
@@ -335,9 +569,18 @@ async function doCancel(row) {
     await ElMessageBox.confirm(`确认取消「${row.name}」？将全额退还所有报名费。`, '取消比赛', { type: 'warning' })
   } catch { return }
   const res = await mttCancel(row.id, '运营取消')
-  if (res.code === 200) { ElMessage.success('已取消并退费'); load() }
+  if (res.code === 200) { ElMessage.success('已取消并退费'); loadMatches() }
   else ElMessage.error(res.message || '取消失败')
 }
+
+// ==================== 比赛详情 / 发放单 ====================
+const detailVisible = ref(false)
+const prizesVisible = ref(false)
+const detail = ref(null)
+const competitors = ref([])
+const ledger = ref([])
+const reconcile = ref(null)
+const prizes = ref([])
 
 async function openDetail(row) {
   detailVisible.value = true
@@ -392,28 +635,208 @@ async function doRedeem(row) {
   }
 }
 
-function openAutoConfig() {
-  if (clubIdFilter.value) autoCfg.value.clubId = Number(clubIdFilter.value)
-  autoVisible.value = true
+// ==================== MTT 机器人 ====================
+const robotLoading = ref(false)
+const robotWorking = ref(false)
+const robots = ref([])
+const robotTotal = ref(0)
+const robotPage = ref({ page: 0, size: 50 })
+const genCount = ref(10)
+const ownerBal = ref(null)
+const transferVisible = ref(false)
+const transferForm = ref({ currency: 'GOLD', amountPerRobot: 1000 })
+
+async function loadRobots() {
+  if (!currentClub.value) return
+  robotLoading.value = true
+  try {
+    const res = await mttRobotList(currentClub.value.id, robotPage.value.page, robotPage.value.size)
+    if (res.code === 200 && res.data) {
+      robots.value = res.data.list || []
+      robotTotal.value = res.data.robotTotal || 0
+    }
+  } finally {
+    robotLoading.value = false
+  }
+}
+
+async function loadOwnerBalance() {
+  if (!currentClub.value) return
+  const res = await mttOwnerBalance(currentClub.value.id)
+  if (res.code === 200) ownerBal.value = res.data
+}
+
+async function doGenerate() {
+  try {
+    await ElMessageBox.confirm(
+      `确认为「${currentClub.value.name}」一键生成 ${genCount.value} 个 MTT 机器人？\n生成后不带任何资金,需群主转账补金币/钻石。`,
+      '生成机器人', { type: 'warning' })
+  } catch { return }
+  robotWorking.value = true
+  try {
+    const res = await mttRobotGenerate(currentClub.value.id, genCount.value)
+    if (res.code === 200) {
+      ElMessage.success('生成完成')
+      loadRobots()
+    } else {
+      ElMessage.error(res.message || '生成失败')
+    }
+  } finally {
+    robotWorking.value = false
+  }
+}
+
+async function doTransfer() {
+  const f = transferForm.value
+  if (!f.amountPerRobot || f.amountPerRobot < 1) { ElMessage.warning('请填每个机器人的转账金额'); return }
+  const total = f.amountPerRobot * robotTotal.value
+  try {
+    await ElMessageBox.confirm(
+      `从群主账户转 ${f.currency === 'GOLD' ? '金币' : '钻石'} 给全部 ${robotTotal.value} 个机器人,每个 ${f.amountPerRobot},合计 ${total}。\n群主余额不足会直接失败。确认转账？`,
+      '群主转账', { type: 'warning' })
+  } catch { return }
+  robotWorking.value = true
+  try {
+    const res = await mttRobotTransfer(currentClub.value.id, f.currency, f.amountPerRobot, null)
+    if (res.code === 200) {
+      ElMessage.success(`转账完成,群主余额剩 ${res.data.ownerBalanceAfter}`)
+      transferVisible.value = false
+      loadRobots()
+      loadOwnerBalance()
+    } else {
+      ElMessage.error(res.message || '转账失败')
+    }
+  } finally {
+    robotWorking.value = false
+  }
+}
+
+// ==================== 成员列表 ====================
+const memberLoading = ref(false)
+const members = ref([])
+const memberTotal = ref(0)
+const memberPage = ref({ page: 0, size: 50 })
+
+async function loadMembers() {
+  if (!currentClub.value) return
+  memberLoading.value = true
+  try {
+    const res = await mttMembers(currentClub.value.id, memberPage.value.page, memberPage.value.size)
+    if (res.code === 200 && res.data) {
+      members.value = res.data.list || []
+      memberTotal.value = res.data.total || 0
+    }
+  } finally {
+    memberLoading.value = false
+  }
+}
+
+// ==================== 赢亏配置 ====================
+const profitConfigs = ref([])
+const profitSaving = ref(false)
+
+async function loadProfitConfigs() {
+  if (!currentClub.value) return
+  const res = await mttProfitConfigGet(currentClub.value.id)
+  if (res.code === 200) profitConfigs.value = res.data || []
+}
+
+async function saveProfit(cfg) {
+  profitSaving.value = true
+  try {
+    const res = await mttProfitConfigSave({
+      clubId: currentClub.value.id,
+      rewardType: cfg.rewardType,
+      enabled: !!cfg.enabled,
+      winBias: cfg.winBias || 0
+    })
+    if (res.code === 200) ElMessage.success(typeName(cfg.rewardType) + ' 赢亏配置已保存(30秒内生效)')
+    else ElMessage.error(res.message || '保存失败')
+  } finally {
+    profitSaving.value = false
+  }
+}
+
+// ==================== 自动开赛（表单化,不再写 JSON） ====================
+const autoCfg = ref(defaultAutoCfg())
+const autoTpl = ref(defaultAutoTpl())
+
+function defaultAutoCfg() {
+  return { enabled: false, minUpcoming: 2, leadMinutes: 20, intervalMinutes: 60, namePrefix: '公开赛' }
+}
+function defaultAutoTpl() {
+  return {
+    rewardType: 1, entryFee: 1000, initialScore: 10000, seatNum: 8,
+    lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
+    initialPool: 0, robotCount: 6, prizes: []
+  }
 }
 
 async function loadAutoConfig() {
-  if (!autoCfg.value.clubId) { ElMessage.warning('先填俱乐部ID'); return }
-  const res = await mttAutoConfigGet(autoCfg.value.clubId)
+  if (!currentClub.value) return
+  autoCfg.value = defaultAutoCfg()
+  autoTpl.value = defaultAutoTpl()
+  const res = await mttAutoConfigGet(currentClub.value.id)
   if (res.code === 200 && res.data) {
-    autoCfg.value = { ...autoCfg.value, ...res.data }
-    ElMessage.success('已读取')
+    const d = res.data
+    autoCfg.value = {
+      enabled: !!d.enabled,
+      minUpcoming: d.minUpcoming ?? 2,
+      leadMinutes: d.leadMinutes ?? 20,
+      intervalMinutes: d.intervalMinutes ?? 60,
+      namePrefix: d.namePrefix || '公开赛'
+    }
+    // 模板 JSON → 表单（运营看不到 JSON）
+    if (d.templateJson) {
+      try {
+        const t = JSON.parse(d.templateJson)
+        autoTpl.value = {
+          rewardType: t.rewardType ?? 1,
+          entryFee: t.entryFee ?? 1000,
+          initialScore: t.initialScore ?? 10000,
+          seatNum: t.seatNum ?? 8,
+          lowerLimit: t.lowerLimit ?? 4,
+          upperLimit: t.upperLimit ?? 200,
+          upgradeMinutes: t.upgradeMinutes ?? 10,
+          initialPool: t.initialPool ?? 0,
+          robotCount: t.robotCount ?? 0,
+          prizes: t.prizeList ? JSON.parse(t.prizeList) : []
+        }
+      } catch { /* 老数据解析失败用默认 */ }
+    }
   }
 }
 
 async function saveAutoConfig() {
-  if (!autoCfg.value.clubId) { ElMessage.warning('先填俱乐部ID'); return }
+  const t = autoTpl.value
+  if (t.rewardType === 3 && (!t.prizes.length || t.prizes.some(p => !p.prizeName))) {
+    ElMessage.warning('实物赛模板必须配奖品清单,且奖品名称不能为空')
+    return
+  }
   saving.value = true
   try {
-    const res = await mttAutoConfigSave(autoCfg.value)
+    const template = {
+      rewardType: t.rewardType, entryFee: t.entryFee, seatNum: t.seatNum,
+      lowerLimit: t.lowerLimit, upperLimit: t.upperLimit,
+      upgradeMinutes: t.upgradeMinutes, robotCount: t.robotCount
+    }
+    if (t.rewardType === 3) {
+      template.initialScore = t.initialScore
+      template.prizeList = JSON.stringify(t.prizes)
+    } else {
+      template.initialPool = t.initialPool
+    }
+    const res = await mttAutoConfigSave({
+      clubId: currentClub.value.id,
+      enabled: autoCfg.value.enabled,
+      minUpcoming: autoCfg.value.minUpcoming,
+      leadMinutes: autoCfg.value.leadMinutes,
+      intervalMinutes: autoCfg.value.intervalMinutes,
+      namePrefix: autoCfg.value.namePrefix,
+      templateJson: JSON.stringify(template)
+    })
     if (res.code === 200) {
       ElMessage.success(autoCfg.value.enabled ? '已保存：自动开赛已开启' : '已保存：自动开赛关闭')
-      autoVisible.value = false
     } else {
       ElMessage.error(res.message || '保存失败')
     }
@@ -424,20 +847,34 @@ async function saveAutoConfig() {
   }
 }
 
-onMounted(load)
+// ==================== 工具 ====================
+function statusText(s) { return { 0: '已结束', 1: '报名中', 2: '进行中', 3: '已解散' }[s] ?? s }
+function statusTag(s) { return { 0: 'success', 1: 'info', 2: 'warning', 3: 'danger' }[s] ?? 'info' }
+function typeName(t) { return { 1: '金币赛', 2: '钻石赛', 3: '实物赛' }[t] ?? t }
+function feeUnit(rewardType) { return rewardType === 1 ? '金币' : '钻石' }
+function roleName(r) { return { 1: '成员', 2: '管理员', 3: '群主', 4: '合伙人' }[r] ?? r }
+function prizeStatusText(s) { return { GRANTED: '待派送', SHIPPED: '已派送', REDEEMED: '已兑付' }[s] ?? s }
+function prizeStatusTag(s) { return { GRANTED: 'warning', SHIPPED: 'primary', REDEEMED: 'success' }[s] ?? 'info' }
+function fmtTime(ms) {
+  if (!ms) return '-'
+  const d = new Date(Number(ms))
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+loadClubs()
 </script>
 
 <style scoped>
 .mtt-page { padding: 16px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .title { font-weight: 600; font-size: 16px; }
-.stats-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.stat-card {
-  flex: 1; min-width: 110px; background: #f7f9fc; border: 1px solid #e4e9f2;
-  border-radius: 8px; padding: 10px 14px; text-align: center;
-}
-.stat-card .num { font-size: 20px; font-weight: 700; }
-.stat-card .lab { font-size: 12px; color: #909399; margin-top: 2px; }
 .tip { font-size: 12px; color: #909399; margin-left: 8px; }
+.robot-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.owner-card :deep(.el-card__body) { padding: 10px 16px; }
+.profit-cards { display: flex; gap: 14px; flex-wrap: wrap; }
+.profit-card { flex: 1; min-width: 280px; max-width: 380px; }
+.prize-rows { display: flex; flex-direction: column; gap: 6px; }
+.prize-row { display: flex; align-items: center; gap: 6px; }
 .reconcile { background: #f7f9fc; padding: 10px; border-radius: 6px; font-size: 12px; }
 </style>
