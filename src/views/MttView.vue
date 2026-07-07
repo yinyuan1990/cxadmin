@@ -193,35 +193,6 @@
             @current-change="p => { memberPage.page = p - 1; loadMembers() }" />
         </el-tab-pane>
 
-        <!-- ===== Tab 4: 赢亏配置（三类别） ===== -->
-        <el-tab-pane label="赢亏配置" name="profit">
-          <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-            title="控制机器人在本俱乐部 MTT 比赛里的打法倾向：收割=机器人弱牌早丢/强牌加注,更容易拿名次;放水=机器人强牌保守/弱牌多跟,真人更容易赢。不改发牌、不看底牌,只调机器人自己打法。" />
-          <div class="profit-cards">
-            <el-card v-for="cfg in profitConfigs" :key="cfg.rewardType" shadow="never" class="profit-card">
-              <template #header>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-weight:600;">{{ typeName(cfg.rewardType) }}</span>
-                  <el-tag v-if="cfg.rewardType===3" type="info" size="small">输赢控制后期开放</el-tag>
-                  <el-switch v-else v-model="cfg.enabled" active-text="启用" />
-                </div>
-              </template>
-              <template v-if="cfg.rewardType!==3">
-                <div style="margin-bottom:6px;" class="tip">
-                  机器人倾向：<b :style="{color: cfg.winBias>0?'#F56C6C':(cfg.winBias<0?'#67C23A':'#909399')}">
-                  {{ cfg.winBias>0?('收割 +'+cfg.winBias):(cfg.winBias<0?('放水 '+cfg.winBias):'公平 0') }}</b>
-                </div>
-                <el-slider v-model="cfg.winBias" :min="-100" :max="100" :step="5" :disabled="!cfg.enabled"
-                  :marks="{'-100':'放水', 0:'公平', 100:'收割'}" style="margin:0 12px 18px;" />
-                <el-button type="primary" size="small" :loading="profitSaving" @click="saveProfit(cfg)">保存</el-button>
-              </template>
-              <template v-else>
-                <div class="tip" style="padding:12px 0;">实物赛的输赢控制一期占位，后期版本开放。当前实物赛机器人按牌力公平打。</div>
-              </template>
-            </el-card>
-          </div>
-        </el-tab-pane>
-
         <!-- ===== Tab 5: 自动开赛 ===== -->
         <el-tab-pane label="自动开赛" name="auto">
           <el-alert type="info" :closable="false" style="margin-bottom:12px;"
@@ -240,17 +211,23 @@
             <el-form-item label="赛事类型">
               <el-radio-group v-model="autoTpl.rewardType">
                 <el-radio :value="1">金币赛(冠军通吃)</el-radio>
-                <el-radio :value="2">钻石赛(冠军通吃)</el-radio>
+                <el-radio :value="2">钻石赛(按名次分奖池)</el-radio>
                 <el-radio :value="3">实物赛(按名次发实物)</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item :label="'报名费(' + feeUnit(autoTpl.rewardType) + ')'">
               <el-input-number v-model="autoTpl.entryFee" :min="autoTpl.rewardType===3?0:1" :step="autoTpl.rewardType===1?100:1" style="width:160px" />
-              <span v-if="autoTpl.rewardType!==3" class="tip">记分牌=报名费(1:1)</span>
+              <span v-if="autoTpl.rewardType===1" class="tip">记分牌=报名费(1:1)</span>
             </el-form-item>
-            <el-form-item v-if="autoTpl.rewardType===3" label="初始记分牌">
+            <el-form-item v-if="autoTpl.rewardType!==1" label="初始记分牌">
               <el-input-number v-model="autoTpl.initialScore" :min="1000" :step="1000" style="width:160px" />
-              <span class="tip">实物赛纯虚拟计分</span>
+              <span class="tip">纯虚拟计分,比赛结束作废</span>
+            </el-form-item>
+            <el-form-item v-if="autoTpl.rewardType===2" label="名次比例%">
+              <el-input v-model="autoTpl.rewardRanking" placeholder="[50,30,20]" style="width:200px" />
+            </el-form-item>
+            <el-form-item v-if="autoTpl.rewardType===2" label="平台手续费%">
+              <el-input-number v-model="autoTpl.platformFeePercent" :min="0" :max="50" style="width:160px" />
             </el-form-item>
             <el-form-item label="桌型">
               <el-radio-group v-model="autoTpl.seatNum">
@@ -298,7 +275,17 @@
             </el-form-item>
             <el-form-item label="机器人数">
               <el-input-number v-model="autoTpl.robotCount" :min="0" :max="200" style="width:160px" />
-              <span class="tip">开赛前5分钟自动报名(需机器人自有余额够报名费)</span>
+              <span class="tip">0=不加机器人;开赛前5分钟自动报名(需机器人自有余额够报名费)</span>
+            </el-form-item>
+            <el-form-item v-if="autoTpl.robotCount > 0" label="机器人输赢">
+              <div style="width:100%; max-width:380px;">
+                <div class="tip" style="margin:0 0 2px;">
+                  <b :style="{color: autoTpl.robotWinBias>0?'#F56C6C':(autoTpl.robotWinBias<0?'#67C23A':'#909399')}">
+                  {{ autoTpl.robotWinBias>0?('收割 +'+autoTpl.robotWinBias):(autoTpl.robotWinBias<0?('放水 '+autoTpl.robotWinBias):'公平 0') }}</b>
+                </div>
+                <el-slider v-model="autoTpl.robotWinBias" :min="-100" :max="100" :step="5"
+                  :marks="{'-100':'放水', 0:'公平', 100:'收割'}" style="margin:0 12px 16px;" />
+              </div>
             </el-form-item>
 
             <el-form-item>
@@ -331,7 +318,10 @@
 
             <h3>💎 钻石赛（rewardType=2）</h3>
             <ul>
-              <li>与金币赛完全同构，货币换成<b>钻石</b>(user.diamond)：钻石报名、记分牌=钻石、冠军通吃兑付钻石</li>
+              <li>报名扣<b>钻石</b>(user.diamond)；<b>记分牌是纯虚拟计分</b>(自由配置,比赛结束作废,钻石值钱1:1玩不起)</li>
+              <li><b>奖池 = 报名费总和 × (100−平台手续费%)  + 固定奖池</b>——手续费(建赛时配,默认10%)为平台留存,固定奖池是运营额外分配</li>
+              <li>奖池按建赛时配的<b>名次比例</b>(如 [50,30,20]=前3名分50/30/20%)发钻石给前几名</li>
+              <li>报名人数不足下限 → 自动解散,报名钻石全额退还</li>
             </ul>
 
             <h3>🎁 实物赛（rewardType=3）</h3>
@@ -346,7 +336,7 @@
             <ul>
               <li><b>比赛日志</b>（服务器 <code>/home/fzcx/chexuan/logs/mtt/</code>）：每场比赛一个文件夹 <code>m{比赛ID}/</code>，里面 <code>match.log</code> 是比赛级全流程，<code>room-{房间号}.log</code> 按房间分开记每局上报/淘汰/迁移/升底皮</li>
               <li><b>详情弹窗</b>：名次表 / 账务流水(每一笔钱) / 对账不变量校验</li>
-              <li><b>赢亏配置</b>：金币/钻石赛可调机器人收割/放水倾向，保存后 30 秒内生效</li>
+              <li><b>机器人输赢</b>：在<b>创建赛事时逐场配置</b>（是否允许加入 + 数量 + 收割/放水滑杆），三种赛事逻辑一致。机器人数=报名上限即纯机器人热闹场(造火爆场面,输赢无意义)；机器人数&lt;报名人数(有真人)时输赢配置才有意义</li>
             </ul>
           </div>
         </el-tab-pane>
@@ -428,7 +418,7 @@
         <el-form-item label="奖励类型">
           <el-radio-group v-model="form.rewardType">
             <el-radio :value="1">金币赛(金币报名,冠军通吃)</el-radio>
-            <el-radio :value="2">钻石赛(钻石报名,冠军通吃)</el-radio>
+            <el-radio :value="2">钻石赛(钻石报名,按名次分奖池)</el-radio>
             <el-radio :value="3">实物赛(钻石报名,按名次发实物)</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -437,13 +427,22 @@
           <span class="tip" v-if="form.rewardType===1">金币由钻石兑换(默认1钻=1000金币)</span>
           <span class="tip" v-else>直接扣玩家钻石</span>
         </el-form-item>
-        <el-form-item v-if="form.rewardType!==3" label="初始记分牌">
+        <el-form-item v-if="form.rewardType===1" label="初始记分牌">
           <el-input :model-value="form.entryFee + ' (=报名费)'" disabled style="width:180px" />
-          <span class="tip">记分牌即货币,冠军兑付全部记分牌</span>
+          <span class="tip">金币赛记分牌即金币,冠军兑付全部记分牌</span>
         </el-form-item>
         <el-form-item v-else label="初始记分牌">
           <el-input-number v-model="form.initialScore" :min="1000" :step="1000" style="width:180px" />
-          <span class="tip">实物赛记分牌为纯虚拟计分,比赛结束作废</span>
+          <span class="tip">纯虚拟计分,比赛结束作废(和报名费无关,可放心配大)</span>
+        </el-form-item>
+        <!-- ⭐ 钻石赛专属：名次比例 + 平台手续费 -->
+        <el-form-item v-if="form.rewardType===2" label="名次比例%">
+          <el-input v-model="form.rewardRanking" placeholder="[50,30,20] = 前3名分50/30/20%" style="width:280px" />
+          <span class="tip">奖池按此比例分给前几名</span>
+        </el-form-item>
+        <el-form-item v-if="form.rewardType===2" label="平台手续费%">
+          <el-input-number v-model="form.platformFeePercent" :min="0" :max="50" style="width:180px" />
+          <span class="tip">奖池 = 报名费总和×(100−手续费)% + 固定奖池,手续费=平台留存</span>
         </el-form-item>
         <el-form-item label="桌型">
           <el-radio-group v-model="form.seatNum">
@@ -492,12 +491,34 @@
         </el-form-item>
         <el-form-item v-if="form.rewardType!==3" :label="'固定奖池(' + feeUnit(form.rewardType) + ')'">
           <el-input-number v-model="form.initialPool" :min="0" :step="1000" style="width:180px" />
-          <span class="tip">运营预置,叠加进冠军兑付(报名人数×报名费+固定奖池)</span>
+          <span class="tip" v-if="form.rewardType===1">运营预置,叠加进冠军兑付</span>
+          <span class="tip" v-else>运营预置,叠加进可分奖池(额外的分配从这里来)</span>
         </el-form-item>
-        <el-form-item label="机器人数">
-          <el-input-number v-model="form.robotCount" :min="0" :max="200" style="width:180px" />
-          <span class="tip">开赛前5分钟自动报名(需机器人自有余额够报名费)</span>
+        <!-- ⭐ 机器人：每场比赛独立配置(是否加入 + 数量 + 本场输赢)，三种赛事逻辑一致 -->
+        <el-form-item label="机器人加入">
+          <el-switch v-model="form.robotEnabled" active-text="允许" inactive-text="不允许" />
         </el-form-item>
+        <template v-if="form.robotEnabled">
+          <el-form-item label="机器人数">
+            <el-input-number v-model="form.robotCount" :min="1" :max="200" style="width:180px" />
+            <span class="tip">开赛前5分钟自动报名(需机器人自有余额够报名费)</span>
+          </el-form-item>
+          <el-form-item label="本场机器人输赢">
+            <div style="width:100%; max-width:440px;">
+              <div class="tip" style="margin:0 0 2px;">
+                <b :style="{color: form.robotWinBias>0?'#F56C6C':(form.robotWinBias<0?'#67C23A':'#909399')}">
+                {{ form.robotWinBias>0?('收割 +'+form.robotWinBias):(form.robotWinBias<0?('放水 '+form.robotWinBias):'公平 0') }}</b>
+                （只调机器人打法倾向,不改发牌）
+              </div>
+              <el-slider v-model="form.robotWinBias" :min="-100" :max="100" :step="5"
+                :marks="{'-100':'放水', 0:'公平', 100:'收割'}" style="margin:0 12px 16px;" />
+              <div class="tip" style="margin:0;">
+                💡 机器人数=报名上限 → 纯机器人热闹场(造火爆场面),输赢无意义留公平0即可；
+                机器人数&lt;报名人数(有真人)时输赢配置才有意义
+              </div>
+            </div>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="createVisible=false">取消</el-button>
@@ -593,7 +614,7 @@ import {
   mttAutoConfigGet, mttAutoConfigSave,
   mttClubs, mttRobotGenerate, mttRobotList, mttOwnerBalance, mttRobotTransfer,
   mttTopUpOwner, mttAvatarFolder, mttRobotUpdateProfile, mttMembers,
-  mttProfitConfigGet, mttProfitConfigSave, mttPrizeItemList, uploadAvatar
+  mttPrizeItemList, uploadAvatar
 } from '../api/index'
 
 const router = useRouter()
@@ -639,7 +660,6 @@ function onTabChange(tab) {
   if (tab === 'matches') loadMatches()
   else if (tab === 'robots') { loadRobots(); loadOwnerBalance() }
   else if (tab === 'members') loadMembers()
-  else if (tab === 'profit') loadProfitConfigs()
   else if (tab === 'auto') loadAutoConfig()
 }
 
@@ -682,7 +702,9 @@ function defaultForm() {
     entryFee: 1000, initialScore: 10000, seatNum: 8,
     lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
     levelTable: '', rewardType: 1,
-    prizes: [], initialPool: 0, robotCount: 0
+    prizes: [], initialPool: 0,
+    rewardRanking: '[50,30,20]', platformFeePercent: 10,  // 钻石赛
+    robotEnabled: false, robotCount: 6, robotWinBias: 0   // 机器人每场配置
   }
 }
 
@@ -711,7 +733,13 @@ async function doCreate() {
       startTime: new Date(f.startTimeDate).getTime(),
       entryFee: f.entryFee, initialScore: f.initialScore, seatNum: f.seatNum,
       lowerLimit: f.lowerLimit, upperLimit: f.upperLimit, upgradeMinutes: f.upgradeMinutes,
-      rewardType: f.rewardType, initialPool: f.initialPool, robotCount: f.robotCount
+      rewardType: f.rewardType, initialPool: f.initialPool,
+      robotCount: f.robotEnabled ? f.robotCount : 0,       // 不允许机器人=0
+      robotWinBias: f.robotEnabled ? f.robotWinBias : 0    // 本场机器人输赢
+    }
+    if (f.rewardType === 2) {
+      body.rewardRanking = f.rewardRanking || '[50,30,20]'
+      body.platformFeePercent = f.platformFeePercent ?? 10
     }
     if (f.levelTable) body.levelTable = f.levelTable
     if (f.rewardType === 3) body.prizeList = prizeSnapshot
@@ -1027,32 +1055,6 @@ async function loadMembers() {
   }
 }
 
-// ==================== 赢亏配置 ====================
-const profitConfigs = ref([])
-const profitSaving = ref(false)
-
-async function loadProfitConfigs() {
-  if (!currentClub.value) return
-  const res = await mttProfitConfigGet(currentClub.value.id)
-  if (res.code === 200) profitConfigs.value = res.data || []
-}
-
-async function saveProfit(cfg) {
-  profitSaving.value = true
-  try {
-    const res = await mttProfitConfigSave({
-      clubId: currentClub.value.id,
-      rewardType: cfg.rewardType,
-      enabled: !!cfg.enabled,
-      winBias: cfg.winBias || 0
-    })
-    if (res.code === 200) ElMessage.success(typeName(cfg.rewardType) + ' 赢亏配置已保存(30秒内生效)')
-    else ElMessage.error(res.message || '保存失败')
-  } finally {
-    profitSaving.value = false
-  }
-}
-
 // ==================== 自动开赛（表单化,不再写 JSON） ====================
 const autoCfg = ref(defaultAutoCfg())
 const autoTpl = ref(defaultAutoTpl())
@@ -1064,7 +1066,8 @@ function defaultAutoTpl() {
   return {
     rewardType: 1, entryFee: 1000, initialScore: 10000, seatNum: 8,
     lowerLimit: 4, upperLimit: 200, upgradeMinutes: 10,
-    initialPool: 0, robotCount: 6, prizes: []
+    initialPool: 0, robotCount: 6, prizes: [],
+    rewardRanking: '[50,30,20]', platformFeePercent: 10, robotWinBias: 0
   }
 }
 
@@ -1097,7 +1100,10 @@ async function loadAutoConfig() {
           upgradeMinutes: t.upgradeMinutes ?? 10,
           initialPool: t.initialPool ?? 0,
           robotCount: t.robotCount ?? 0,
-          prizes: t.prizeList ? snapshotToPrizes(JSON.parse(t.prizeList)) : []
+          prizes: t.prizeList ? snapshotToPrizes(JSON.parse(t.prizeList)) : [],
+          rewardRanking: t.rewardRanking || '[50,30,20]',
+          platformFeePercent: t.platformFeePercent ?? 10,
+          robotWinBias: t.robotWinBias ?? 0
         }
       } catch { /* 老数据解析失败用默认 */ }
     }
@@ -1117,11 +1123,17 @@ async function saveAutoConfig() {
     const template = {
       rewardType: t.rewardType, entryFee: t.entryFee, seatNum: t.seatNum,
       lowerLimit: t.lowerLimit, upperLimit: t.upperLimit,
-      upgradeMinutes: t.upgradeMinutes, robotCount: t.robotCount
+      upgradeMinutes: t.upgradeMinutes, robotCount: t.robotCount,
+      robotWinBias: t.robotCount > 0 ? (t.robotWinBias ?? 0) : 0
     }
     if (t.rewardType === 3) {
       template.initialScore = t.initialScore
       template.prizeList = prizeSnapshot
+    } else if (t.rewardType === 2) {
+      template.initialScore = t.initialScore
+      template.initialPool = t.initialPool
+      template.rewardRanking = t.rewardRanking || '[50,30,20]'
+      template.platformFeePercent = t.platformFeePercent ?? 10
     } else {
       template.initialPool = t.initialPool
     }
@@ -1216,7 +1228,8 @@ async function quickCreate() {
       entryFee: t.entryFee ?? 1000, seatNum: t.seatNum ?? 8,
       lowerLimit: t.lowerLimit ?? 4, upperLimit: t.upperLimit ?? 200,
       upgradeMinutes: t.upgradeMinutes ?? 10,
-      rewardType: t.rewardType ?? 1, robotCount: t.robotCount ?? 0
+      rewardType: t.rewardType ?? 1, robotCount: t.robotCount ?? 0,
+      robotWinBias: t.robotWinBias ?? 0
     }
     if (t.ruleTemplate) body.ruleTemplate = t.ruleTemplate
     if ((t.rewardType ?? 1) === 3) {
@@ -1226,6 +1239,11 @@ async function quickCreate() {
         ElMessage.warning('自动开赛模板是实物赛但没配奖品清单,请先到「自动开赛」页配好模板')
         return
       }
+    } else if ((t.rewardType ?? 1) === 2) {
+      body.initialScore = t.initialScore ?? 10000
+      body.initialPool = t.initialPool ?? 0
+      body.rewardRanking = t.rewardRanking || '[50,30,20]'
+      body.platformFeePercent = t.platformFeePercent ?? 10
     } else {
       body.initialPool = t.initialPool ?? 0
     }
@@ -1267,8 +1285,6 @@ loadClubs()
 .tip { font-size: 12px; color: #909399; margin-left: 8px; }
 .robot-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .owner-card :deep(.el-card__body) { padding: 10px 16px; }
-.profit-cards { display: flex; gap: 14px; flex-wrap: wrap; }
-.profit-card { flex: 1; min-width: 280px; max-width: 380px; }
 .prize-rows { display: flex; flex-direction: column; gap: 6px; }
 .rules-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .match-type-tabs { margin-bottom: 4px; }

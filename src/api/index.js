@@ -324,15 +324,6 @@ export function mttMembers(clubId, page = 0, size = 50) {
   return request.post('/admin/mtt/members', { clubId, page, size })
 }
 
-export function mttProfitConfigGet(clubId) {
-  return request.post('/admin/mtt/profitConfig/get', { clubId })
-}
-
-export function mttProfitConfigSave(data) {
-  // { clubId, rewardType, enabled, winBias, remark? }
-  return request.post('/admin/mtt/profitConfig/save', data)
-}
-
 // ---- 实物奖品库（最简 CRUD；建实物赛时下拉选择） ----
 
 export function mttPrizeItemList(all = false) {
