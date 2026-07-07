@@ -121,10 +121,11 @@
               <el-tag type="primary" size="large" style="margin-left:8px;">钻石 {{ ownerBal.diamond }}</el-tag>
               <el-button size="small" style="margin-left:12px;" @click="loadOwnerBalance">刷新</el-button>
             </el-card>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <el-input-number v-model="genCount" :min="1" :max="500" size="small" style="width:130px" />
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <el-input-number v-model="genCount" :min="1" :max="500" size="small" style="width:120px" />
+              <el-input v-model="genAvatarFolder" placeholder="头像文件夹(服务器路径,已上传好图片)" size="small" style="width:280px" clearable />
               <el-button type="primary" size="small" :loading="robotWorking" @click="doGenerate">一键生成机器人</el-button>
-              <el-button type="warning" size="small" @click="transferVisible = true">群主转账 →</el-button>
+              <el-button type="warning" size="small" @click="openTransfer">一键分配资金 →</el-button>
             </div>
           </div>
 
@@ -328,11 +329,9 @@
       </template>
     </el-dialog>
 
-    <!-- ================= 群主转账弹窗 ================= -->
-    <el-dialog v-model="transferVisible" title="群主 → 机器人转账" width="480px">
-      <el-alert type="warning" :closable="false" style="margin-bottom:12px;"
-        :title="'群主余额：金币 ' + (ownerBal?.gold ?? '-') + ' / 钻石 ' + (ownerBal?.diamond ?? '-') + '。余额不足会直接报错;金币不够可先让群主用钻石兑换。'" />
-      <el-form label-width="120px" size="small">
+    <!-- ================= 群主转账/一键分配弹窗 ================= -->
+    <el-dialog v-model="transferVisible" title="群主 → 机器人 一键分配" width="520px" :close-on-click-modal="!distributing">
+      <el-form label-width="120px" size="small" :disabled="distributing">
         <el-form-item label="转什么">
           <el-radio-group v-model="transferForm.currency">
             <el-radio value="GOLD">金币(金币赛报名用)</el-radio>
@@ -342,13 +341,29 @@
         <el-form-item label="每个机器人">
           <el-input-number v-model="transferForm.amountPerRobot" :min="1" :step="transferForm.currency==='GOLD'?1000:10" style="width:180px" />
         </el-form-item>
-        <el-form-item label="转给谁">
-          <span class="tip">该俱乐部全部机器人（共 {{ robotTotal }} 个），合计 {{ (transferForm.amountPerRobot || 0) * robotTotal }}</span>
-        </el-form-item>
       </el-form>
+
+      <!-- 自动算账 -->
+      <el-descriptions :column="1" size="small" border style="margin-top:4px;">
+        <el-descriptions-item label="机器人数">{{ robotTotal }} 个</el-descriptions-item>
+        <el-descriptions-item label="需要总额">
+          <b>{{ needTotal }}</b> {{ transferForm.currency==='GOLD'?'金币':'钻石' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="群主当前余额">{{ ownerCurrentBalance }}</el-descriptions-item>
+        <el-descriptions-item label="缺口(自动给群主补)">
+          <b :style="{color: ownerGap>0?'#E6A23C':'#67C23A'}">{{ ownerGap>0 ? ('+' + ownerGap + ' (分配时自动补给群主,落管理员流水)') : '余额充足,无需补款' }}</b>
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <!-- 进度条 -->
+      <div v-if="distributing || distributeProgress > 0" style="margin-top:14px;">
+        <el-progress :percentage="distributeProgress" :status="distributeProgress>=100?'success':undefined" :stroke-width="18" text-inside />
+        <div class="tip" style="margin-top:4px;">{{ distributeText }}</div>
+      </div>
+
       <template #footer>
-        <el-button @click="transferVisible=false">取消</el-button>
-        <el-button type="primary" :loading="robotWorking" @click="doTransfer">确认转账</el-button>
+        <el-button :disabled="distributing" @click="transferVisible=false">关闭</el-button>
+        <el-button type="primary" :loading="distributing" @click="doDistribute">⚡ 一键分配</el-button>
       </template>
     </el-dialog>
 
@@ -507,14 +522,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   mttList, mttCreate, mttCancel, mttDetail, mttCompetitors, mttLedger,
   mttReconcile, mttStats, mttPrizeGrants, mttPrizeShip, mttPrizeRedeem,
   mttAutoConfigGet, mttAutoConfigSave,
   mttClubs, mttRobotGenerate, mttRobotList, mttOwnerBalance, mttRobotTransfer,
-  mttMembers, mttProfitConfigGet, mttProfitConfigSave,
+  mttTopUpOwner, mttMembers, mttProfitConfigGet, mttProfitConfigSave,
   mttPrizeItemList, mttPrizeItemSave, mttPrizeItemDelete
 } from '../api/index'
 
@@ -720,9 +735,13 @@ const robots = ref([])
 const robotTotal = ref(0)
 const robotPage = ref({ page: 0, size: 50 })
 const genCount = ref(10)
+const genAvatarFolder = ref('')
 const ownerBal = ref(null)
 const transferVisible = ref(false)
 const transferForm = ref({ currency: 'GOLD', amountPerRobot: 1000 })
+const distributing = ref(false)
+const distributeProgress = ref(0)
+const distributeText = ref('')
 
 async function loadRobots() {
   if (!currentClub.value) return
@@ -747,14 +766,21 @@ async function loadOwnerBalance() {
 async function doGenerate() {
   try {
     await ElMessageBox.confirm(
-      `确认为「${currentClub.value.name}」一键生成 ${genCount.value} 个 MTT 机器人？\n生成后不带任何资金,需群主转账补金币/钻石。`,
+      `确认为「${currentClub.value.name}」一键生成 ${genCount.value} 个 MTT 机器人？\n昵称自动随机(字不重叠)` +
+      (genAvatarFolder.value ? `,头像从文件夹「${genAvatarFolder.value}」按图分配` : ',未填头像文件夹本次不分配头像') +
+      '。\n生成后不带任何资金,用「一键分配资金」补金币/钻石。',
       '生成机器人', { type: 'warning' })
   } catch { return }
   robotWorking.value = true
   try {
-    const res = await mttRobotGenerate(currentClub.value.id, genCount.value)
+    const res = await mttRobotGenerate(currentClub.value.id, genCount.value, genAvatarFolder.value || null)
     if (res.code === 200) {
-      ElMessage.success('生成完成')
+      const d = res.data || {}
+      if (d.avatarError) {
+        ElMessage.warning(`机器人已生成 ${d.createdUsers} 个,但头像分配失败: ${d.avatarError}`)
+      } else {
+        ElMessage.success(`生成完成 ${d.createdUsers} 个` + (d.avatarsAssigned != null ? `,头像已分配 ${d.avatarsAssigned} 个` : ''))
+      }
       loadRobots()
     } else {
       ElMessage.error(res.message || '生成失败')
@@ -764,28 +790,82 @@ async function doGenerate() {
   }
 }
 
-async function doTransfer() {
+// ==================== ⚡ 一键分配资金（自动算缺口→补群主→进度条逐批转账） ====================
+const needTotal = computed(() => (transferForm.value.amountPerRobot || 0) * robotTotal.value)
+const ownerCurrentBalance = computed(() => {
+  if (!ownerBal.value) return '-'
+  return transferForm.value.currency === 'GOLD' ? (ownerBal.value.gold ?? 0) : (ownerBal.value.diamond ?? 0)
+})
+const ownerGap = computed(() => {
+  const bal = typeof ownerCurrentBalance.value === 'number' ? ownerCurrentBalance.value : 0
+  return Math.max(0, needTotal.value - bal)
+})
+
+function openTransfer() {
+  distributeProgress.value = 0
+  distributeText.value = ''
+  loadOwnerBalance()
+  transferVisible.value = true
+}
+
+async function doDistribute() {
   const f = transferForm.value
-  if (!f.amountPerRobot || f.amountPerRobot < 1) { ElMessage.warning('请填每个机器人的转账金额'); return }
-  const total = f.amountPerRobot * robotTotal.value
+  if (!f.amountPerRobot || f.amountPerRobot < 1) { ElMessage.warning('请填每个机器人的分配金额'); return }
+  if (robotTotal.value < 1) { ElMessage.warning('该俱乐部还没有机器人,先一键生成'); return }
+  const unit = f.currency === 'GOLD' ? '金币' : '钻石'
   try {
     await ElMessageBox.confirm(
-      `从群主账户转 ${f.currency === 'GOLD' ? '金币' : '钻石'} 给全部 ${robotTotal.value} 个机器人,每个 ${f.amountPerRobot},合计 ${total}。\n群主余额不足会直接失败。确认转账？`,
-      '群主转账', { type: 'warning' })
+      `一键分配 ${unit}：${robotTotal.value} 个机器人 × ${f.amountPerRobot} = 共 ${needTotal.value}` +
+      (ownerGap.value > 0 ? `\n群主余额不足,将自动给群主补 ${ownerGap.value}(落管理员流水),再由群主转给机器人。` : '\n群主余额充足,直接分配。') +
+      '\n确认执行？',
+      '⚡ 一键分配', { confirmButtonText: '开始分配', type: 'warning' })
   } catch { return }
-  robotWorking.value = true
+
+  distributing.value = true
+  distributeProgress.value = 0
   try {
-    const res = await mttRobotTransfer(currentClub.value.id, f.currency, f.amountPerRobot, null)
-    if (res.code === 200) {
-      ElMessage.success(`转账完成,群主余额剩 ${res.data.ownerBalanceAfter}`)
-      transferVisible.value = false
-      loadRobots()
-      loadOwnerBalance()
-    } else {
-      ElMessage.error(res.message || '转账失败')
+    // 1. 缺口自动补给群主
+    if (ownerGap.value > 0) {
+      distributeText.value = `正在给群主补款 ${ownerGap.value} ${unit}...`
+      const topUp = await mttTopUpOwner(currentClub.value.id, f.currency, ownerGap.value)
+      if (topUp.code !== 200) { ElMessage.error('群主补款失败: ' + (topUp.message || '')); return }
+      distributeProgress.value = 10
     }
+
+    // 2. 拉全部机器人 ID（分页取完）
+    distributeText.value = '正在获取机器人列表...'
+    const allIds = []
+    for (let p = 0; p * 200 < robotTotal.value + 200; p++) {
+      const res = await mttRobotList(currentClub.value.id, p, 200)
+      const rows = res.code === 200 && res.data ? (res.data.list || []) : []
+      rows.forEach(r => allIds.push(r.userId))
+      if (rows.length < 200) break
+    }
+    if (!allIds.length) { ElMessage.warning('没有机器人可分配'); return }
+    distributeProgress.value = Math.max(distributeProgress.value, 15)
+
+    // 3. 分批转账（每批20个），进度条实时推进
+    const batchSize = 20
+    let done = 0
+    for (let i = 0; i < allIds.length; i += batchSize) {
+      const batch = allIds.slice(i, i + batchSize)
+      distributeText.value = `正在分配 ${done + 1} ~ ${done + batch.length} / ${allIds.length} 个机器人...`
+      const res = await mttRobotTransfer(currentClub.value.id, f.currency, f.amountPerRobot, batch)
+      if (res.code !== 200) {
+        ElMessage.error(`第 ${done + 1} 批分配失败: ${res.message || ''}(已分配的 ${done} 个不受影响)`)
+        return
+      }
+      done += batch.length
+      distributeProgress.value = 15 + Math.round(done / allIds.length * 85)
+    }
+
+    distributeProgress.value = 100
+    distributeText.value = `✅ 分配完成：${done} 个机器人,每个 ${f.amountPerRobot} ${unit},共 ${done * f.amountPerRobot}`
+    ElMessage.success('一键分配完成')
+    loadRobots()
+    loadOwnerBalance()
   } finally {
-    robotWorking.value = false
+    distributing.value = false
   }
 }
 

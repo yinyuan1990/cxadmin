@@ -292,8 +292,8 @@ export function mttClubs(params) {
   return request.post('/admin/mtt/clubs', params || {})
 }
 
-export function mttRobotGenerate(clubId, count) {
-  return request.post('/admin/mtt/robot/generate', { clubId, count })
+export function mttRobotGenerate(clubId, count, avatarFolder) {
+  return request.post('/admin/mtt/robot/generate', { clubId, count, avatarFolder })
 }
 
 export function mttRobotList(clubId, page = 0, size = 50) {
@@ -306,6 +306,10 @@ export function mttOwnerBalance(clubId) {
 
 export function mttRobotTransfer(clubId, currency, amountPerRobot, userIds) {
   return request.post('/admin/mtt/robot/transfer', { clubId, currency, amountPerRobot, userIds })
+}
+
+export function mttTopUpOwner(clubId, currency, amount) {
+  return request.post('/admin/mtt/robot/topUpOwner', { clubId, currency, amount })
 }
 
 export function mttMembers(clubId, page = 0, size = 50) {
