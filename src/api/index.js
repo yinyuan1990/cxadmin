@@ -316,6 +316,10 @@ export function mttAvatarFolder(clubId) {
   return request.post('/admin/mtt/robot/avatarFolder', { clubId })
 }
 
+export function mttRobotUpdateProfile(userId, nickname, avatar) {
+  return request.post('/admin/mtt/robot/updateProfile', { userId, nickname, avatar })
+}
+
 export function mttMembers(clubId, page = 0, size = 50) {
   return request.post('/admin/mtt/members', { clubId, page, size })
 }

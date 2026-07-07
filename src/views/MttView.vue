@@ -141,7 +141,19 @@
 
           <el-table :data="robots" border size="small" v-loading="robotLoading" style="margin-top:10px;">
             <el-table-column prop="userId" label="userId" width="90" />
-            <el-table-column prop="nickname" label="昵称" min-width="110" />
+            <el-table-column label="头像" width="76" align="center">
+              <template #default="{ row }">
+                <div class="avatar-cell" @click="openProfileEdit(row)" title="点击修改头像">
+                  <el-image v-if="row.avatar" :src="row.avatar" style="width:40px;height:40px;border-radius:50%;" fit="cover" />
+                  <div v-else class="avatar-none">无</div>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="昵称" min-width="110">
+              <template #default="{ row }">
+                <el-link type="primary" :underline="false" @click="openProfileEdit(row)" title="点击修改昵称">{{ row.nickname }}</el-link>
+              </template>
+            </el-table-column>
             <el-table-column prop="gold" label="金币" width="110" />
             <el-table-column prop="diamond" label="钻石" width="110" />
             <el-table-column prop="clubScore" label="俱乐部积分" width="110" />
@@ -288,6 +300,33 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <!-- ================= 机器人昵称/头像修改 ================= -->
+    <el-dialog v-model="profileVisible" :title="'修改机器人 #' + (profileForm.userId || '')" width="420px">
+      <el-form label-width="70px" size="small">
+        <el-form-item label="头像">
+          <div class="icon-upload">
+            <el-upload :show-file-list="false" accept="image/*" :before-upload="handleAvatarUpload">
+              <div v-if="profileForm.avatar" class="icon-preview">
+                <el-image :src="profileForm.avatar" style="width:72px;height:72px;border-radius:50%;" fit="cover" />
+                <div class="icon-mask">点击更换</div>
+              </div>
+              <div v-else class="icon-empty" v-loading="avatarUploading">
+                <span style="font-size:22px;">+</span>
+                <div class="tip" style="margin:0;">上传头像</div>
+              </div>
+            </el-upload>
+          </div>
+        </el-form-item>
+        <el-form-item label="昵称">
+          <el-input v-model="profileForm.nickname" maxlength="20" placeholder="机器人昵称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="profileVisible=false">取消</el-button>
+        <el-button type="primary" :loading="profileSaving" @click="saveProfile">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- ================= 群主转账/一键分配弹窗 ================= -->
     <el-dialog v-model="transferVisible" title="群主 → 机器人 一键分配" width="520px" :close-on-click-modal="!distributing">
@@ -501,8 +540,8 @@ import {
   mttReconcile, mttStats, mttPrizeGrants, mttPrizeShip, mttPrizeRedeem,
   mttAutoConfigGet, mttAutoConfigSave,
   mttClubs, mttRobotGenerate, mttRobotList, mttOwnerBalance, mttRobotTransfer,
-  mttTopUpOwner, mttAvatarFolder, mttMembers, mttProfitConfigGet, mttProfitConfigSave,
-  mttPrizeItemList
+  mttTopUpOwner, mttAvatarFolder, mttRobotUpdateProfile, mttMembers,
+  mttProfitConfigGet, mttProfitConfigSave, mttPrizeItemList, uploadAvatar
 } from '../api/index'
 
 const router = useRouter()
@@ -741,6 +780,57 @@ async function loadRobots() {
     }
   } finally {
     robotLoading.value = false
+  }
+}
+
+// ==================== 机器人昵称/头像修改 ====================
+const profileVisible = ref(false)
+const profileSaving = ref(false)
+const avatarUploading = ref(false)
+const profileForm = ref({ userId: null, nickname: '', avatar: '' })
+
+function openProfileEdit(row) {
+  profileForm.value = { userId: row.userId, nickname: row.nickname || '', avatar: row.avatar || '' }
+  profileVisible.value = true
+}
+
+async function handleAvatarUpload(rawFile) {
+  if (rawFile.size > 5 * 1024 * 1024) {
+    ElMessage.warning('图片不能超过 5MB')
+    return false
+  }
+  avatarUploading.value = true
+  try {
+    const res = await uploadAvatar(rawFile)
+    if (res.code === 200 && res.data) {
+      profileForm.value.avatar = res.data
+      ElMessage.success('头像已上传')
+    } else {
+      ElMessage.error(res.message || '上传失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '上传失败')
+  } finally {
+    avatarUploading.value = false
+  }
+  return false
+}
+
+async function saveProfile() {
+  const f = profileForm.value
+  if (!f.nickname || !f.nickname.trim()) { ElMessage.warning('昵称不能为空'); return }
+  profileSaving.value = true
+  try {
+    const res = await mttRobotUpdateProfile(f.userId, f.nickname.trim(), f.avatar)
+    if (res.code === 200) {
+      ElMessage.success('已保存')
+      profileVisible.value = false
+      loadRobots()
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } finally {
+    profileSaving.value = false
   }
 }
 
@@ -1119,6 +1209,26 @@ loadClubs()
 .profit-card { flex: 1; min-width: 280px; max-width: 380px; }
 .prize-rows { display: flex; flex-direction: column; gap: 6px; }
 .rules-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.avatar-cell { display: flex; justify-content: center; cursor: pointer; }
+.avatar-none {
+  width: 40px; height: 40px; border-radius: 50%; background: #f0f2f5;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: #909399;
+}
+.icon-upload { display: flex; align-items: center; gap: 10px; }
+.icon-empty {
+  width: 72px; height: 72px; border: 1px dashed #cdd0d6; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #909399; cursor: pointer;
+}
+.icon-empty:hover { border-color: #409eff; color: #409eff; }
+.icon-preview { position: relative; cursor: pointer; }
+.icon-mask {
+  position: absolute; inset: 0; background: rgba(0,0,0,.45); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; border-radius: 50%; opacity: 0; transition: opacity .2s;
+}
+.icon-preview:hover .icon-mask { opacity: 1; }
 .prize-row { display: flex; align-items: center; gap: 6px; }
 .reconcile { background: #f7f9fc; padding: 10px; border-radius: 6px; font-size: 12px; }
 </style>
