@@ -74,6 +74,11 @@
           <span>MTT比赛管理</span>
         </el-menu-item>
 
+        <el-menu-item index="/prize-items">
+          <el-icon><Box /></el-icon>
+          <span>实物管理</span>
+        </el-menu-item>
+
         <el-menu-item index="/stats" disabled>
           <el-icon><DataAnalysis /></el-icon>
           <span>数据统计</span>
@@ -123,7 +128,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
   Setting, User, DataAnalysis, Wallet, Money, Connection, Document, ChatDotRound, Monitor,
-  Present, MagicStick, Tickets, UserFilled, ArrowDown, SwitchButton, Trophy
+  Present, MagicStick, Tickets, UserFilled, ArrowDown, SwitchButton, Trophy, Box
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 

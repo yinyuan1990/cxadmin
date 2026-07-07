@@ -88,6 +88,12 @@ const routes = [
         name: 'Mtt',
         component: () => import('../views/MttView.vue'),
         meta: { title: 'MTT比赛管理' }
+      },
+      {
+        path: 'prize-items',
+        name: 'PrizeItems',
+        component: () => import('../views/PrizeItemView.vue'),
+        meta: { title: '实物管理' }
       }
     ]
   },
