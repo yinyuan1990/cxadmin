@@ -312,6 +312,10 @@ export function mttTopUpOwner(clubId, currency, amount) {
   return request.post('/admin/mtt/robot/topUpOwner', { clubId, currency, amount })
 }
 
+export function mttAvatarFolder(clubId) {
+  return request.post('/admin/mtt/robot/avatarFolder', { clubId })
+}
+
 export function mttMembers(clubId, page = 0, size = 50) {
   return request.post('/admin/mtt/members', { clubId, page, size })
 }

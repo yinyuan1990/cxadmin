@@ -123,9 +123,19 @@
             </el-card>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <el-input-number v-model="genCount" :min="1" :max="500" size="small" style="width:120px" />
-              <el-input v-model="genAvatarFolder" placeholder="头像文件夹(服务器路径,已上传好图片)" size="small" style="width:280px" clearable />
+              <el-input v-model="genAvatarFolder" placeholder="头像文件夹(点右边按钮生成)" size="small" style="width:260px" clearable>
+                <template #suffix>
+                  <span v-if="avatarFolderInfo" class="tip" style="margin:0;">{{ avatarFolderInfo.imageCount }} 张图</span>
+                </template>
+              </el-input>
+              <el-button size="small" @click="ensureAvatarFolder">生成/检查头像文件夹</el-button>
               <el-button type="primary" size="small" :loading="robotWorking" @click="doGenerate">一键生成机器人</el-button>
               <el-button type="warning" size="small" @click="openTransfer">一键分配资金 →</el-button>
+            </div>
+            <div v-if="avatarFolderInfo" class="tip" style="width:100%;">
+              📁 已按俱乐部编号 <b>{{ avatarFolderInfo.clubNo }}</b> 建好文件夹,当前 <b>{{ avatarFolderInfo.imageCount }}</b> 张图。
+              上传位置(宿主机): <b>/home/fzcx/chexuan/shared/header/mtt-avatars/{{ avatarFolderInfo.clubNo }}/</b>
+              → 放好图片后点"生成/检查"刷新数量,再一键生成机器人即可按图分配
             </div>
           </div>
 
@@ -470,7 +480,7 @@ import {
   mttReconcile, mttStats, mttPrizeGrants, mttPrizeShip, mttPrizeRedeem,
   mttAutoConfigGet, mttAutoConfigSave,
   mttClubs, mttRobotGenerate, mttRobotList, mttOwnerBalance, mttRobotTransfer,
-  mttTopUpOwner, mttMembers, mttProfitConfigGet, mttProfitConfigSave,
+  mttTopUpOwner, mttAvatarFolder, mttMembers, mttProfitConfigGet, mttProfitConfigSave,
   mttPrizeItemList
 } from '../api/index'
 
@@ -679,6 +689,18 @@ const robotTotal = ref(0)
 const robotPage = ref({ page: 0, size: 50 })
 const genCount = ref(10)
 const genAvatarFolder = ref('')
+const avatarFolderInfo = ref(null)
+
+async function ensureAvatarFolder() {
+  const res = await mttAvatarFolder(currentClub.value.id)
+  if (res.code === 200 && res.data) {
+    avatarFolderInfo.value = res.data
+    genAvatarFolder.value = res.data.folder
+    ElMessage.success(`文件夹就绪(编号${res.data.clubNo}),当前 ${res.data.imageCount} 张图`)
+  } else {
+    ElMessage.error(res.message || '生成文件夹失败')
+  }
+}
 const ownerBal = ref(null)
 const transferVisible = ref(false)
 const transferForm = ref({ currency: 'GOLD', amountPerRobot: 1000 })
