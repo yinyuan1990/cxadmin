@@ -778,20 +778,39 @@ const ledger = ref([])
 const reconcile = ref(null)
 const prizes = ref([])
 
-async function openDetail(row) {
-  detailVisible.value = true
-  detail.value = null
+let detailTimer = null
+let detailMatchId = null
+
+async function loadDetail(matchId) {
   try {
     const [d, c, l, r] = await Promise.all([
-      mttDetail(row.id), mttCompetitors(row.id), mttLedger(row.id), mttReconcile(row.id)
+      mttDetail(matchId), mttCompetitors(matchId), mttLedger(matchId), mttReconcile(matchId)
     ])
     if (d.code === 200) detail.value = d.data
     if (c.code === 200) competitors.value = c.data || []
     if (l.code === 200) ledger.value = l.data || []
     if (r.code === 200) reconcile.value = r.data
+    // 比赛结束/取消后停止自动刷新
+    if (detail.value && detail.value.status !== 2 && detailTimer) {
+      clearInterval(detailTimer)
+      detailTimer = null
+    }
   } catch (e) {
     ElMessage.error(e.message || '加载详情失败')
   }
+}
+
+async function openDetail(row) {
+  detailVisible.value = true
+  detail.value = null
+  detailMatchId = row.id
+  await loadDetail(row.id)
+  // 进行中的比赛每 10 秒自动刷新（关闭弹窗即停止）
+  if (detailTimer) clearInterval(detailTimer)
+  detailTimer = setInterval(() => {
+    if (!detailVisible.value) { clearInterval(detailTimer); detailTimer = null; return }
+    loadDetail(detailMatchId)
+  }, 10000)
 }
 
 async function openPrizes(row) {

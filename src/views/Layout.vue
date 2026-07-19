@@ -29,6 +29,11 @@
           <span>授信日志</span>
         </el-menu-item>
 
+        <el-menu-item index="/diamond-consume">
+          <el-icon><Coin /></el-icon>
+          <span>钻石消耗统计</span>
+        </el-menu-item>
+
         <el-menu-item index="/commission">
           <el-icon><Money /></el-icon>
           <span>积分反点</span>
@@ -77,6 +82,11 @@
         <el-menu-item index="/prize-items">
           <el-icon><Box /></el-icon>
           <span>实物管理</span>
+        </el-menu-item>
+
+        <el-menu-item index="/semi-robot-operator">
+          <el-icon><UserFilled /></el-icon>
+          <span>半自动机器人操作员</span>
         </el-menu-item>
 
         <el-menu-item index="/stats" disabled>
@@ -128,7 +138,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
   Setting, User, DataAnalysis, Wallet, Money, Connection, Document, ChatDotRound, Monitor,
-  Present, MagicStick, Tickets, UserFilled, ArrowDown, SwitchButton, Trophy, Box
+  Present, MagicStick, Tickets, UserFilled, ArrowDown, SwitchButton, Trophy, Box, Coin
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 

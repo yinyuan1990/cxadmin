@@ -390,7 +390,18 @@
               <el-form-item label="芒果封顶"><el-input-number v-model="batch.mangoMax" :min="1" :max="999" /></el-form-item>
               <el-form-item label="结算(分钟)"><el-input-number v-model="batch.settleTime" :min="1" :max="1440" /></el-form-item>
               <el-form-item label="点位"><el-input-number v-model="batch.commissionRate" :min="0" :max="10" /></el-form-item>
-              <el-form-item label="带入(可选)"><el-input-number v-model="batch.bringIn" :min="0" :max="1000000000" /></el-form-item>
+              <el-form-item label="带入(可选)">
+                <el-input-number v-model="batch.bringIn" :min="0" :max="1000000000" />
+                <span class="hint">留空则按「底注×系统最低带入倍数」；填了下面的带入倍数范围时本项被忽略</span>
+              </el-form-item>
+              <el-form-item label="带入倍数范围">
+                <el-input-number v-model="batch.bringInMultiplierMin" :min="1" :max="100000" placeholder="最小倍数" style="width:110px" />
+                <span style="margin:0 4px">~</span>
+                <el-input-number v-model="batch.bringInMultiplierMax" :min="1" :max="100000" placeholder="最大倍数" style="width:110px" />
+                <span style="margin:0 4px">步长</span>
+                <el-input-number v-model="batch.bringInMultiplierStep" :min="1" :max="100000" placeholder="步长" style="width:100px" />
+                <span class="hint">三项都填才生效：每个机器人坐下各自在[最小,最大]按步长随机抽一个倍数×底注当带入，不再统一一个数字(比如填50/200/50，就在50/100/150/200四个里随机抽)</span>
+              </el-form-item>
               <el-form-item label="三花"><el-switch v-model="batch.sanHua" /></el-form-item>
               <el-form-item label="地九王"><el-switch v-model="batch.diWang" /></el-form-item>
               <el-form-item label="丁二皇吃席"><el-switch v-model="batch.dingErHuangFeast" /></el-form-item>
@@ -398,6 +409,57 @@
               <el-form-item label="GPS">
                 <el-switch v-model="batch.gps" />
                 <span class="hint">与真人建桌接口对齐；机器人不搜索定位，对机器人无影响</span>
+              </el-form-item>
+              <el-form-item label="奖池">
+                <el-switch v-model="batch.bonusPool" />
+                <span class="hint">开启后本桌参与奖池累积/命中（需全局奖池开关也开启）</span>
+              </el-form-item>
+              <el-form-item label="排队">
+                <el-switch v-model="batch.queue" />
+                <span class="hint">本桌坐满后真人进入排队，凑够人自动开新桌</span>
+              </el-form-item>
+              <el-form-item label="排队人数" v-if="batch.queue">
+                <el-input-number v-model="batch.queuePlayerCount" :min="2" :max="8" />
+                <span class="hint">凑够该人数自动开新桌；默认=开局人数</span>
+              </el-form-item>
+              <el-divider content-position="left">拟真：周期结束站起/离桌（不填=用俱乐部默认值）</el-divider>
+              <el-form-item label="赢家站起概率">
+                <el-input-number v-model="batch.periodWinStandUpProb" :min="0" :max="100" placeholder="默认值" />
+                <span class="hint">% 周期结算后本周期净赢的机器人站起离桌</span>
+              </el-form-item>
+              <el-form-item label="输家站起概率">
+                <el-input-number v-model="batch.periodLoseStandUpProb" :min="0" :max="100" placeholder="默认值" />
+                <span class="hint">% 周期结算后本周期净输的机器人站起离桌</span>
+              </el-form-item>
+              <el-form-item label="全机器人赢家比例" v-if="!batch.profitControlEnabled">
+                <el-input-number v-model="batch.allRobotWinRatePercent" :min="0" :max="30" placeholder="默认值" />
+                <span class="hint">% 本桌全程无真人时，本周期净赢人数占在座机器人比例，上限30%</span>
+              </el-form-item>
+              <el-form-item label="围观基数倍数">
+                <el-input-number v-model="batch.viewerAudienceMultiplierMin" :min="1" :max="50" placeholder="默认" style="width:100px" />
+                <span style="margin:0 4px">~</span>
+                <el-input-number v-model="batch.viewerAudienceMultiplierMax" :min="1" :max="50" placeholder="默认" style="width:100px" />
+                <span class="hint">基础围观基数=开局人数×此倍数(建桌时随机定一次)，叠加小时/节假日/在座人数后得出实时围观目标</span>
+              </el-form-item>
+              <el-form-item label="封顶倍数(赢/输)">
+                <span style="margin-right:4px">赢</span>
+                <el-input-number v-model="batch.chipCapMultiplier" :min="0" :max="100000" style="width:130px" @change="onChipCapManuallyEdited" />
+                <span style="margin:0 4px 0 12px">输</span>
+                <el-input-number v-model="batch.lossCapMultiplier" :min="0" :max="100000" style="width:130px" @change="onLossCapManuallyEdited" />
+                <el-button v-if="chipCapAutoFilled || lossCapAutoFilled" size="small" text type="primary" style="margin-left:6px">已按带入范围自动算出</el-button>
+                <span class="hint"><b>赢(筹码封顶)</b>：机器人筹码 &gt; 底注×此倍数时强制站起落袋，防止一直被判定"应赢"又不下桌筹码无限滚雪球(实测有滚到231万的)。
+                  <b>输(亏损封顶)</b>：本次入座<b>累计净亏</b>(累计带入-当前筹码) ≥ 底注×此倍数时强制站起换人——没有它输家只在"筹码打空"那一刻才可能换人，
+                  慢慢输、每次没输光就补带入的机器人会从头坐到尾越亏越多(实测一桌137局3个机器人各打88~112手，净亏滚到-8.6万~-12.4万)。
+                  <b>两个都不建议留0</b>；填了上面的带入倍数范围会<b>自动算出建议值(都=带入倍数上限×2</b>，按步长取整，即"赢/输到最大带入的两倍就换人")，也可以各自手动改。
+                  后端兜底：赢的生效封顶不低于本人带入×1.2。不填=用俱乐部默认值</span>
+              </el-form-item>
+              <el-form-item label="房间最低机器人数">
+                <el-input-number v-model="batch.minSeatedRobots" :min="0" :max="8" placeholder="默认值" />
+                <span class="hint">在座机器人不得低于此数：概率类站起会被拦下，低于时补位加急(不等错峰、跳过观望)。桌上只剩2~3个机器人时"赢家比例"退化成每把指定唯一赢家，观感=一个人一直赢，建议≥4。不填=用俱乐部默认值</span>
+              </el-form-item>
+              <el-form-item label="满座围观人数">
+                <el-input-number v-model="batch.viewerSeatFullCount" :min="0" :max="10000" placeholder="默认值" />
+                <span class="hint">本桌覆盖俱乐部的"满座围观人数"：坐满(=开局人数)时该组件等于此值，在座减少按 e 曲线快速衰减到 0；最终围观目标=50%×原有算法+50%×此组件。不填=用俱乐部默认值；填0=本桌明确关闭该组件</span>
               </el-form-item>
               <el-divider content-position="left">盈利控盘（真人进来时按目标放水/吃分）</el-divider>
               <el-form-item label="开启控盘"><el-switch v-model="batch.profitControlEnabled" /></el-form-item>
@@ -496,12 +558,14 @@
                   <span v-else>—</span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="190" align="center" fixed="right">
+              <el-table-column label="操作" width="330" align="center" fixed="right">
                 <template #default="{ row }">
+                  <el-button type="danger" link size="small" @click="openRoomParams(row)">查看参数</el-button>
                   <el-button type="primary" link size="small" @click="openRoomProfit(row)">调控盘</el-button>
                   <el-button type="success" link size="small" @click="openAddViewers(row)">加围观</el-button>
                   <el-button type="warning" link size="small" @click="handleAdjustViewers(row)">调围观</el-button>
                   <el-button type="info" link size="small" @click="handleClearViewers(row)">清围观</el-button>
+                  <el-button type="info" link size="small" @click="handleCleanPhantomViewers(row)">清幽灵观众</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -509,6 +573,21 @@
 
           <!-- ===== 俱乐部配置（持久化，重启不丢） ===== -->
           <el-tab-pane label="俱乐部配置" name="config">
+            <el-alert type="warning" show-icon :closable="false" style="margin-bottom:12px">
+              <template #title>
+                <b>输赢比例调控说明（2026-07-17~18 为解决"一段时间一个人赢"所做的改动）</b>
+              </template>
+              图例：<el-tag size="small" type="danger" effect="dark">新增</el-tag> 这轮新加的参数
+              <el-tag size="small" type="warning" effect="dark" style="margin-left:6px">已调整</el-tag> 参数还在但背后机制变了
+              <el-tag size="small" effect="dark" style="margin-left:6px">受守门约束</el-tag> 原有参数，现在会被"房间最低机器人数"拦截。<br/>
+              另有几处<b>写死在代码里、不可配置</b>的机制（ProfitControlService/RobotEngine）：
+              ① 全机器人桌"应赢家"改为<b>每把重抽</b>（不再维护跨手数名单，杜绝同一人被连续照顾）；
+              ② 每把仅 <b>40%</b> 概率真正接管发强牌，其余交回自然牌力；
+              ③ 在座机器人 <b>&lt;4 人的小桌完全不接管</b>（小桌上比例会退化成"每把指定唯一赢家"）；
+              ④ 应输家单把喂池上限=底注×15~40（不再无限跟注把整个带入喂给赢家）；
+              ⑤ 封顶生效线=max(配置封顶, 本人带入×1.2)（防止带入高于封顶的机器人一坐下就被踢）；
+              ⑥ 概率类站起在<b>执行时刻</b>会复查最低人数（防止全桌同时结算批量站起击穿下限）。
+            </el-alert>
             <el-form :inline="true" :model="config" label-width="110px" class="cfg-form">
               <el-form-item label="活跃起始(时)"><el-input-number v-model="config.activeStartHour" :min="0" :max="23" /></el-form-item>
               <el-form-item label="活跃结束(时)">
@@ -539,7 +618,8 @@
               </el-form-item>
               <el-form-item label="输完换人">
                 <el-switch v-model="config.swapOnLoseEnabled" />
-                <span class="hint">机器人输完按概率不补带入、改为站起换上其他机器人，避免在座总是同几个（纯机器人/有真人都生效）</span>
+                <el-tag size="small" effect="dark" style="margin-left:6px">受守门约束</el-tag>
+                <span class="hint">机器人输完按概率不补带入、改为站起换上其他机器人，避免在座总是同几个（纯机器人/有真人都生效）。<b>为什么标记</b>：换人=先站起再补位，中间有空窗，站起后在座会跌破"房间最低机器人数"时本次换人被拦、改为补带入留下（判定时+执行时各查一次）</span>
               </el-form-item>
               <el-form-item label="换人概率(%)">
                 <el-input-number v-model="config.swapOnLoseProb" :min="0" :max="100" :disabled="!config.swapOnLoseEnabled" />
@@ -551,11 +631,201 @@
                 <el-input-number v-model="config.splitMaxDelayMs" :min="0" :max="10000" :step="100" />
                 <span class="hint">机器人逐个拆牌、相邻随机滞后此区间（默认100~1500ms），不再同时拆；累计封顶=拆牌超时-3秒</span>
               </el-form-item>
+              <el-form-item label="赢家站起概率(%)">
+                <el-input-number v-model="config.periodWinStandUpProb" :min="0" :max="100" />
+                <el-tag size="small" effect="dark" style="margin-left:6px">受守门约束</el-tag>
+                <span class="hint">默认40。建桌时没单独设置就用这个（批量建桌页可按桌覆盖）。<b>为什么标记</b>：周期结算是全桌同时判定的，此前会出现"3个人同时通过检查一起站起、桌上瞬间掉到2~3人"；现在站起会跌破"房间最低机器人数"时被拦、改为补带入留下（判定时+执行时各查一次）</span>
+              </el-form-item>
+              <el-form-item label="输家站起概率(%)">
+                <el-input-number v-model="config.periodLoseStandUpProb" :min="0" :max="100" />
+                <el-tag size="small" effect="dark" style="margin-left:6px">受守门约束</el-tag>
+                <span class="hint">默认30。建桌时没单独设置就用这个（批量建桌页可按桌覆盖）。<b>为什么标记</b>：同"赢家站起概率"，会跌破最低机器人数时本次站起被拦</span>
+              </el-form-item>
+              <el-form-item label="全机器人赢家比例(%)">
+                <el-input-number v-model="config.allRobotWinRatePercent" :min="0" :max="30" />
+                <el-tag size="small" type="warning" effect="dark" style="margin-left:6px">已调整</el-tag>
+                <span class="hint">默认20，上限30。仅本桌全程无真人时生效；建桌时没单独设置就用这个。<b>为什么标记</b>：参数含义没变，但背后机制从"维护N手赢家名单"改成<b>每把重抽</b>——原来名单存续期内同一人每把必赢(还叠加一个名单几十手不刷新的bug)，正是"一段时间一个人赢"的根因；现在每把按此比例现场抽赢家、打完即弃，且每把只有40%概率真正接管、在座&lt;4人的小桌完全不接管(写死在代码里)</span>
+              </el-form-item>
+              <el-form-item label="封顶倍数(赢/输)">
+                <span style="margin-right:4px">赢</span>
+                <el-input-number v-model="config.chipCapMultiplier" :min="0" :max="100000" style="width:130px" />
+                <span style="margin:0 4px 0 12px">输</span>
+                <el-input-number v-model="config.lossCapMultiplier" :min="0" :max="100000" style="width:130px" />
+                <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">输侧新增</el-tag>
+                <span class="hint">默认都是0=不启用，建桌时没单独设置就用这里的值，建议都配300~500。
+                  <b>赢(筹码封顶)</b>：机器人筹码 &gt; 底注×此倍数时强制站起落袋，是压"一个人赢很多"观感的直接旋钮(生效线=max(此配置,本人带入×1.2)，不会一坐下就被踢)。
+                  <b>输(亏损封顶)</b>：本次入座<b>累计净亏</b>(累计带入-当前筹码) ≥ 底注×此倍数时强制站起换人，防止同一机器人反复补带入越输越多、战绩榜挂着几个大负数。
+                  另外注意：<b>"输完换人概率"配0等于永远不换</b>，输家只会无限补带入，建议同时把它调到30~50</span>
+              </el-form-item>
+              <el-form-item label="房间最低机器人数">
+                <el-input-number v-model="config.minSeatedRobots" :min="0" :max="8" />
+                <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增</el-tag>
+                <span class="hint">默认0=不启用。在座机器人不得低于此数：概率类站起(周期结算/输完换人/让座散场)会被拦下，低于时补位加急(不等错峰、跳过观望)。<b>为什么新增</b>：桌上只剩2~3个机器人时"赢家比例30%"四舍五入永远只能指定1个赢家(2人桌=每把50%概率指定你赢)，观感必然是"一个人一直赢"；只有把桌养到≥4人，比例控制才有意义。建议≥4且比"每桌坐人数"小1~2；建桌时没单独设置就用这个</span>
+              </el-form-item>
+              <el-form-item label="围观时段曲线">
+                <el-switch v-model="config.viewerCurveEnabled" />
+                <span class="hint">开启后围观目标按24小时曲线波动(凌晨低/晚8-9点峰值)；关闭则小时系数固定100%，但"基础基数+在座人数"仍生效</span>
+              </el-form-item>
+              <el-form-item label="围观基数倍数(默认)">
+                <el-input-number v-model="config.viewerAudienceMultiplierMin" :min="1" :max="50" style="width:100px" />
+                <span style="margin:0 4px">~</span>
+                <el-input-number v-model="config.viewerAudienceMultiplierMax" :min="1" :max="50" style="width:100px" />
+                <span class="hint">默认3~5倍。基础围观基数=开局人数×此倍数，建桌时没单独设置就用这个范围随机取一个倍数</span>
+              </el-form-item>
+              <el-form-item label="围观自然流动">
+                <el-switch v-model="config.viewerFlowEnabled" />
+                <span class="hint">开启后已达标的围观人数每5~15分钟随机换1人(出一个进一个)，看起来更"活"</span>
+              </el-form-item>
+              <el-form-item label="满座围观人数">
+                <el-input-number v-model="config.viewerSeatFullCount" :min="0" :max="10000" :disabled="config.viewerSeatBandEnabled" />
+                <span class="hint">旧算法组件（下面"围观档位模式"开启时<b>不生效</b>）。坐满时该组件等于此值，在座减少按 e 曲线衰减，占目标50%</span>
+              </el-form-item>
+
+              <el-divider content-position="left">在座/围观 拟真调度（2026-07-19 产品需求）</el-divider>
+
+              <el-form-item label="在座人数曲线">
+                <el-switch v-model="config.seatedCurveEnabled" />
+                <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增</el-tag>
+                <span class="hint">开启后每张机器人桌的在座人数按下面的24小时表维持（多退少补：超了逐个站起、少了加急补位；
+                  该表优先于"每桌坐多少/房间最低机器人数"）。<b>档位=8(满座)时自动启用"留座给真人"</b>：
+                  每3~5分钟站起1个机器人留出空位1~2分钟，真人没进来就自动回补，最多同时留3个；非满座档没有留真人逻辑</span>
+              </el-form-item>
+              <el-form-item label="24小时在座表">
+                <el-input v-model="config.seatedCurveJson" style="width:520px"
+                          placeholder="留空=内置默认 全天满座 [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]" />
+                <span class="hint">JSON数组24项，下标=小时(0~23点)，每项2~8。<b>内置默认已改为全天满座8人</b>（时段起伏改由下面"满座围观24小时表"体现）。
+                  保存时校验格式，清空则回到内置默认</span>
+              </el-form-item>
+              <el-form-item label="围观档位模式">
+                <el-switch v-model="config.viewerSeatBandEnabled" />
+                <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增·默认开</el-tag>
+                <span class="hint">开启后围观人数只由<b>在座人数</b>定档：在座&lt;5 无人围观；5人→2~3个；6人→3~5个；7人→6~7个；8人→7~10个。
+                  每30~60秒流动一次(<b>先进先出</b>：最早进来的围观离开、新人进来，总数在档位内)。
+                  开启时上面的"围观基础基数/时段曲线/满座围观人数"旧算法全部不参与；关闭则回到旧算法</span>
+              </el-form-item>
+              <el-form-item label="满座围观24小时表">
+                <el-input v-model="config.viewerFullHourJson" style="width:520px" :disabled="!config.viewerSeatBandEnabled"
+                          placeholder="留空=满座沿用档位默认7~10，示例 [30,20,15,10,8,8,10,15,20,25,30,35,40,40,45,50,55,60,70,80,90,90,80,50]" />
+                <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增</el-tag>
+                <span class="hint">JSON数组24项，下标=小时(0~23点)，每项0~500。<b>只在坐满8人后生效</b>：该小时的围观人数以表里的值为目标
+                  (渐进增减到位，到位后每<b>30秒</b>先进先出流动1人)。在座&lt;8 时仍走上面的固定档位，不受此表影响。
+                  留空=满座沿用7~10档位。需要"围观档位模式"开启</span>
+              </el-form-item>
+
+              <el-divider content-position="left">辅助参数</el-divider>
+
+              <el-form-item label="机器人送礼">
+                <el-switch v-model="config.giftEnabled" />
+                <span class="hint">开启后机器人会在恭喜赢家/安慰输家(真人或机器人皆可)等场景随机送礼物</span>
+              </el-form-item>
+              <el-form-item label="送礼频控(次/桌/时)">
+                <el-input-number v-model="config.giftMaxPerHour" :min="0" :max="1000" :disabled="!config.giftEnabled" />
+                <span class="hint">默认6，每桌每小时送礼次数上限，下面4个场景概率共用这一个频控</span>
+              </el-form-item>
+              <el-form-item label="恭喜大牌赢家(%)">
+                <el-input-number v-model="config.giftCongratsProb" :min="0" :max="100" :disabled="!config.giftEnabled" />
+                <span class="hint">默认25。真人摸到大牌并赢钱时，随机机器人恭喜的概率</span>
+              </el-form-item>
+              <el-form-item label="真人赢钱拉氛围(%)">
+                <el-input-number v-model="config.giftAtmosphereProb" :min="0" :max="100" :disabled="!config.giftEnabled" />
+                <span class="hint">默认15。真人赢钱(未到大牌线)，随机机器人送礼拉氛围的概率</span>
+              </el-form-item>
+              <el-form-item label="安慰输家(%)">
+                <el-input-number v-model="config.giftComfortProb" :min="0" :max="100" :disabled="!config.giftEnabled" />
+                <span class="hint">默认15。真人或机器人净输达到"安慰线"时，随机在座机器人送礼安慰(纯机器人桌也生效)</span>
+              </el-form-item>
+              <el-form-item label="自己赢大把撒礼(%)">
+                <el-input-number v-model="config.giftSelfSplashProb" :min="0" :max="100" :disabled="!config.giftEnabled" />
+                <span class="hint">默认10。机器人自己净赢达到"大赢线"时，对全场撒礼物的概率</span>
+              </el-form-item>
+              <el-form-item label="大赢/安慰线(倍底分)">
+                <el-input-number v-model="config.giftBigWinMultiplier" :min="1" :max="1000" style="width:100px" :disabled="!config.giftEnabled" />
+                <span style="margin:0 4px">/</span>
+                <el-input-number v-model="config.giftBigLoseMultiplier" :min="1" :max="1000" style="width:100px" :disabled="!config.giftEnabled" />
+                <span class="hint">默认30/15。净赢≥底分×前者才算"大赢家"(可被恭喜/自己撒礼)；净输≥底分×后者才会被安慰</span>
+              </el-form-item>
+              <el-form-item label="坐下前观望">
+                <el-switch v-model="config.watchBeforeSitEnabled" />
+                <span class="hint">机器人补位时先以观众身份观望一段时间再坐下，而非立即入座</span>
+              </el-form-item>
+              <el-form-item label="观望时长(秒)">
+                <el-input-number v-model="config.watchMinSec" :min="0" :max="3600" :disabled="!config.watchBeforeSitEnabled" />
+                <span style="margin:0 6px">~</span>
+                <el-input-number v-model="config.watchMaxSec" :min="0" :max="3600" :disabled="!config.watchBeforeSitEnabled" />
+                <span class="hint">默认60~180秒</span>
+              </el-form-item>
+              <el-form-item label="站起后留观概率(%)">
+                <el-input-number v-model="config.stayAfterStandProb" :min="0" :max="100" />
+                <span class="hint">默认40。机器人站起后按此概率先留在观众列表一会再离房，而非立即消失</span>
+              </el-form-item>
+              <el-form-item label="补位相邻间隔(秒)">
+                <el-input-number v-model="config.refillIntervalMinSec" :min="0" :max="3600" />
+                <span style="margin:0 6px">~</span>
+                <el-input-number v-model="config.refillIntervalMaxSec" :min="0" :max="3600" />
+                <span class="hint">默认60~120秒。多个机器人补位时错峰间隔，避免同时涌入</span>
+              </el-form-item>
+              <el-form-item label="补带入延时(秒)">
+                <el-input-number v-model="config.rebuyDelayMinSec" :min="0" :max="600" />
+                <span style="margin:0 6px">~</span>
+                <el-input-number v-model="config.rebuyDelayMaxSec" :min="0" :max="600" />
+                <el-tag size="small" type="warning" effect="dark" style="margin-left:6px">受保护窗口约束</el-tag>
+                <span class="hint">默认3~15秒。筹码不足/周期结算后补带入前的随机延时，避免同一时刻集体补充。
+                  <b>注意：系统配置的"筹码不足保护窗口"当前为 {{ config.insufficientChipsProtectSeconds ?? 10 }} 秒</b>——
+                  筹码打空的机器人只有这么长时间可以补带入，延时抽到超过窗口就会补带入失败、被按"筹码不足"硬站起
+                  （一把大池同时打空几个机器人时就是"全桌一起站起"的观感，2026-07-19 修复）。
+                  上限建议 ≤ {{ Math.max(1, (config.insufficientChipsProtectSeconds ?? 10) - 3) }} 秒；
+                  配超了后端也会自动压到"窗口−2.5秒"，不会再误伤，但配置上对齐更直观</span>
+              </el-form-item>
+              <el-form-item label="首行动人额外延时">
+                <el-switch v-model="config.firstActorExtraDelay" />
+                <span class="hint">本手/本轮第一个行动的机器人多想一会，更像真人</span>
+              </el-form-item>
+              <el-form-item label="桌面构成站起规则">
+                <el-switch v-model="config.standupRulesEnabled" />
+                <span class="hint">开启后按"满桌让座/真人走散场/独坐超时"等规则自动触发机器人站起</span>
+              </el-form-item>
+
               <el-form-item>
                 <el-button type="primary" :icon="Check" @click="handleSaveConfig">保存俱乐部配置(持久化)</el-button>
               </el-form-item>
             </el-form>
             <div class="hint">该配置按俱乐部保存到数据库，服务重启后自动恢复（房间不恢复）。「本俱乐部压测」开关在右上角。</div>
+          </el-tab-pane>
+
+          <!-- ===== 节假日日历（全局配置，影响所有俱乐部的机器人围观日期系数，非本俱乐部专属） ===== -->
+          <el-tab-pane label="节假日日历" name="holidayCal">
+            <div class="hint" style="margin-bottom:10px">
+              机器人围观目标人数 = 基础基数 × 小时系数 × <b>日期系数</b> × 在座热度系数；日期系数优先级：法定节假日 &gt; 周六日 &gt; 平日(固定100%)。
+              <b>这里是全局配置，保存后对所有俱乐部生效</b>，不是本俱乐部单独的设置。点日历格子可直接切换该天"是否设为法定节假日"。
+            </div>
+            <el-form :inline="true" size="small" style="margin-bottom:6px">
+              <el-form-item label="周末系数(%)">
+                <el-input-number v-model="holidayCal.weekendCoefficient" :min="50" :max="300" style="width:120px" @change="handleSaveHolidayCalendar" />
+              </el-form-item>
+              <el-form-item label="节假日系数(%)">
+                <el-input-number v-model="holidayCal.holidayCoefficient" :min="50" :max="300" style="width:120px" @change="handleSaveHolidayCalendar" />
+              </el-form-item>
+              <el-form-item label="今日生效系数">
+                <el-tag type="success">{{ holidayCal.todayCoefficient }}%</el-tag>
+              </el-form-item>
+              <el-form-item>
+                <el-button :icon="Refresh" :loading="holidayCal.loading" @click="loadHolidayCalendar">刷新</el-button>
+                <el-button type="primary" :loading="holidayCal.saving" @click="handleSaveHolidayCalendar">保存系数</el-button>
+              </el-form-item>
+            </el-form>
+            <el-calendar v-model="holidayCal.currentDate">
+              <template #date-cell="{ data }">
+                <div class="holiday-cal-cell" :class="holidayCalCellClass(data.day)" @click="toggleHolidayDate(data.day)">
+                  <div class="holiday-cal-day">{{ Number(data.day.split('-')[2]) }}</div>
+                  <el-tag v-if="isHolidayDate(data.day)" type="danger" size="small" effect="dark">节假日 {{ holidayCal.holidayCoefficient }}%</el-tag>
+                  <el-tag v-else-if="isWeekendDate(data.day)" type="warning" size="small">周末 {{ holidayCal.weekendCoefficient }}%</el-tag>
+                  <span v-else class="hint" style="font-size:11px">平日 100%</span>
+                </div>
+              </template>
+            </el-calendar>
+            <div class="hint" style="margin-top:8px">
+              已设法定节假日({{ holidayCal.dates.length }}天)：{{ holidayCal.dates.slice().sort().join('、') || '无' }}
+            </div>
           </el-tab-pane>
 
           <!-- ===== 输赢汇总（本俱乐部：结果·覆盖累计 + 对账过程可清理） ===== -->
@@ -627,6 +897,29 @@
       </el-card>
     </template>
 
+    <!-- 查看某桌实际生效的机器人拟真参数（建房覆盖 + 俱乐部默认），配合日志核实是否生效 -->
+    <el-dialog v-model="roomParamsVisible" title="本桌实际生效的机器人参数" width="560px">
+      <div class="hint" style="margin-bottom:10px">roomId={{ roomParamsData.roomId }}，桌号 {{ roomParamsData.tableNo }}。"建房覆盖" = 批量建桌时单独填过；"俱乐部默认" = 没单独填、回退俱乐部配置页的值。</div>
+      <el-table :data="roomParamsData.params" v-loading="roomParamsLoading" size="small" border>
+        <el-table-column label="参数" prop="name" min-width="180" />
+        <el-table-column label="当前生效值" prop="effective" min-width="140">
+          <template #default="{ row }">
+            <span v-if="typeof row.effective === 'boolean'">{{ row.effective ? '是' : '否' }}</span>
+            <span v-else>{{ row.effective }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.source === '建房覆盖' ? 'success' : 'info'">{{ row.source }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="roomParamsVisible = false">关闭</el-button>
+        <el-button type="primary" :icon="Refresh" @click="openRoomParams(roomParamsData)">刷新</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 单桌控盘调节 -->
     <el-dialog v-model="roomProfitVisible" title="单桌盈利控盘" width="460px">
       <el-form :model="roomProfit" label-width="90px">
@@ -674,7 +967,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus, Check, Search, Upload, Avatar, CircleClose, ArrowLeft } from '@element-plus/icons-vue'
 import {
@@ -683,9 +976,10 @@ import {
   robotTopUp, setRobotAvatars, robotBatchCreate, listRobotTables,
   robotRandomAvatars, robotRandomNames, setRobotProfitRoom, uploadAvatar,
   generateClubViewers, listClubViewers, viewerRandomNames, viewerRandomAvatars,
-  addRobotViewers, clearRobotViewers, adjustRobotViewers, assignAvatarsFromFolder,
+  addRobotViewers, clearRobotViewers, cleanPhantomRobotViewers, adjustRobotViewers, assignAvatarsFromFolder,
   getClubProfit, getProfitTables, getProfitHistory, clearProfitHistory,
-  setClubGameDisabled
+  setClubGameDisabled, getRobotRoomParams,
+  getHolidayViewerConfig, setHolidayViewerConfig
 } from '../api'
 
 const loading = ref(false)
@@ -696,7 +990,20 @@ const config = reactive({
   minActionDelayMs: 800, maxActionDelayMs: 2500, autoRefill: true,
   autoTopUpClubScore: true, minClubScore: 10000, rebuyMultiplier: 50,
   swapOnLoseEnabled: false, swapOnLoseProb: 30,
-  splitMinDelayMs: 100, splitMaxDelayMs: 1500
+  splitMinDelayMs: 100, splitMaxDelayMs: 1500,
+  periodWinStandUpProb: 40, periodLoseStandUpProb: 30, allRobotWinRatePercent: 20, chipCapMultiplier: 0, lossCapMultiplier: 0, minSeatedRobots: 0,
+  viewerCurveEnabled: false, viewerAudienceMultiplierMin: 3, viewerAudienceMultiplierMax: 5,
+  viewerFlowEnabled: true, viewerSeatFullCount: 0,
+  seatedCurveEnabled: false, seatedCurveJson: '', viewerSeatBandEnabled: true, viewerFullHourJson: '',
+  giftEnabled: false, giftMaxPerHour: 6,
+  giftCongratsProb: 25, giftAtmosphereProb: 15, giftComfortProb: 15, giftSelfSplashProb: 10,
+  giftBigWinMultiplier: 30, giftBigLoseMultiplier: 15,
+  watchBeforeSitEnabled: true, watchMinSec: 60, watchMaxSec: 180,
+  insufficientChipsProtectSeconds: 10, // 只读展示：系统配置的筹码不足保护窗口(秒)，读接口带出
+  stayAfterStandProb: 40,
+  refillIntervalMinSec: 60, refillIntervalMaxSec: 120,
+  rebuyDelayMinSec: 3, rebuyDelayMaxSec: 15,
+  firstActorExtraDelay: true, standupRulesEnabled: true
 })
 
 // 视图：list=俱乐部列表入口；detail=进入某俱乐部
@@ -891,10 +1198,64 @@ const renameLoading = ref(false)
 const batch = reactive({
   tableCount: 10, perTable: 6, playerCount: 6, baseScore: 10, mangoMax: 5,
   settleTime: 30, commissionRate: 5, bringIn: 0, sanHua: true, diWang: false, noScore: false, dingErHuangFeast: false, gps: false,
+  bonusPool: false, queue: false, queuePlayerCount: 6,
+  // ⭐ 带入倍数范围：三个都填才生效，每个机器人坐下各自随机抽一个倍数×底注，不再统一用上面的"带入"
+  bringInMultiplierMin: null, bringInMultiplierMax: null, bringInMultiplierStep: null,
+  // 拟真：周期结束站起/离桌 + 全机器人桌赢家比例 + 围观基数倍数，null=不覆盖，用俱乐部默认值
+  periodWinStandUpProb: null, periodLoseStandUpProb: null, allRobotWinRatePercent: null,
+  viewerAudienceMultiplierMin: null, viewerAudienceMultiplierMax: null,
+  chipCapMultiplier: null, lossCapMultiplier: null, minSeatedRobots: null, viewerSeatFullCount: null,
   profitControlEnabled: false, profitMode: 'rate', targetProfit: 0, targetProfitRate: -0.05, perHandCap: 0, adjustStrength: 0.5
 })
 const batchLoading = ref(false)
 const lastBatchTip = ref('—')
+
+// ⭐ 筹码封顶倍数自动建议：填了带入倍数范围就自动算 = 带入倍数上限×2(按步长取整)，不用手动算；
+//   手动改过封顶倍数之后就不再自动覆盖(chipCapAutoFilled 变 false)，尊重手动填的值。
+//   2026-07-18 ×5→×2：×5 是封顶功能刚加时的老规则(250×5=1250,封顶12.5万)，实测赢家滚到12万+才被踢，
+//   战绩榜观感就是"一个人赢很多"；改为"最大带入翻倍即落袋"(250×2=500)，配合后端"生效封顶不低于
+//   本人带入×1.2"的兜底，建议值偏低也不会出现带入大于封顶、一坐下就被踢的问题。
+const chipCapAutoFilled = ref(false)
+// ⭐ 2026-07-19 亏损封顶(输家侧)跟筹码封顶用同一个建议值(=带入倍数上限×2)，各自独立记录"是否手动改过"
+const lossCapAutoFilled = ref(false)
+
+function computeSuggestedChipCap() {
+  const max = batch.bringInMultiplierMax
+  const step = batch.bringInMultiplierStep
+  if (!max || max <= 0) return null
+  let suggested = Math.round(max * 2)
+  if (step && step > 0) {
+    suggested = Math.ceil(suggested / step) * step // 对齐到步长，凑整好看
+  }
+  return suggested
+}
+
+watch([() => batch.bringInMultiplierMin, () => batch.bringInMultiplierMax, () => batch.bringInMultiplierStep], () => {
+  const suggested = computeSuggestedChipCap()
+  if (suggested == null) return
+  // 只在"还没手动改过"或者"当前值就是上一次自动填的值"时才自动更新，不覆盖用户手动填的数字
+  if (!chipCapAutoFilled.value && (batch.chipCapMultiplier === null || batch.chipCapMultiplier === 0)) {
+    batch.chipCapMultiplier = suggested
+    chipCapAutoFilled.value = true
+  } else if (chipCapAutoFilled.value) {
+    batch.chipCapMultiplier = suggested
+  }
+  // 亏损封顶同样自动填(同一个建议值)，手动改过就不再覆盖
+  if (!lossCapAutoFilled.value && (batch.lossCapMultiplier === null || batch.lossCapMultiplier === 0)) {
+    batch.lossCapMultiplier = suggested
+    lossCapAutoFilled.value = true
+  } else if (lossCapAutoFilled.value) {
+    batch.lossCapMultiplier = suggested
+  }
+})
+
+function onChipCapManuallyEdited() {
+  chipCapAutoFilled.value = false // 手动改过，以后带入范围再变也不会覆盖这个值了
+}
+
+function onLossCapManuallyEdited() {
+  lossCapAutoFilled.value = false
+}
 
 // 单桌控盘调节弹窗
 const roomProfitVisible = ref(false)
@@ -1066,6 +1427,80 @@ function onTabChange(name) {
   if (name === 'viewers') { viewerQuery.page = 0; loadViewers() }
   else if (name === 'tables') loadTables()
   else if (name === 'profit') loadClubProfit()
+  else if (name === 'holidayCal') loadHolidayCalendar()
+}
+
+// ===== 节假日日历（全局配置，不区分俱乐部） =====
+const holidayCal = reactive({
+  currentDate: new Date(),
+  dates: [],              // yyyy-MM-dd 字符串数组
+  weekendCoefficient: 120,
+  holidayCoefficient: 130,
+  todayCoefficient: 100,
+  loading: false,
+  saving: false
+})
+
+function isHolidayDate(day) {
+  return holidayCal.dates.includes(day)
+}
+function isWeekendDate(day) {
+  const d = new Date(day + 'T00:00:00')
+  const wd = d.getDay()
+  return wd === 0 || wd === 6
+}
+function holidayCalCellClass(day) {
+  if (isHolidayDate(day)) return 'is-holiday'
+  if (isWeekendDate(day)) return 'is-weekend'
+  return ''
+}
+
+async function loadHolidayCalendar() {
+  holidayCal.loading = true
+  try {
+    const res = await getHolidayViewerConfig()
+    if (res.code === 200 && res.data) {
+      const dates = res.data.holidayDates || []
+      holidayCal.dates = Array.isArray(dates) ? dates : []
+      holidayCal.weekendCoefficient = Number(res.data.weekendCoefficient) || 120
+      holidayCal.holidayCoefficient = Number(res.data.holidayCoefficient) || 130
+      holidayCal.todayCoefficient = Number(res.data.todayCoefficient) || 100
+    }
+  } catch (e) { /* ignore */ } finally {
+    holidayCal.loading = false
+  }
+}
+
+async function persistHolidayCalendar() {
+  holidayCal.saving = true
+  try {
+    const res = await setHolidayViewerConfig({
+      holidayDates: holidayCal.dates,
+      weekendCoefficient: holidayCal.weekendCoefficient,
+      holidayCoefficient: holidayCal.holidayCoefficient
+    })
+    if (res.code === 200) {
+      ElMessage.success('已保存(全局生效)')
+      if (res.data) holidayCal.todayCoefficient = Number(res.data.todayCoefficient) || 100
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存失败')
+  } finally {
+    holidayCal.saving = false
+  }
+}
+
+function handleSaveHolidayCalendar() {
+  persistHolidayCalendar()
+}
+
+function toggleHolidayDate(day) {
+  const idx = holidayCal.dates.indexOf(day)
+  if (idx >= 0) holidayCal.dates.splice(idx, 1)
+  else holidayCal.dates.push(day)
+  persistHolidayCalendar()
 }
 
 function onSelectionChange(rows) {
@@ -1222,6 +1657,30 @@ async function handleBatchCreate() {
   }
 }
 
+// 查看某桌实际生效的机器人拟真参数
+const roomParamsVisible = ref(false)
+const roomParamsLoading = ref(false)
+const roomParamsData = reactive({ roomId: null, tableNo: '', params: [] })
+
+async function openRoomParams(row) {
+  roomParamsData.roomId = row.roomId
+  roomParamsData.tableNo = row.tableNo
+  roomParamsVisible.value = true
+  roomParamsLoading.value = true
+  try {
+    const res = await getRobotRoomParams(row.roomId)
+    if (res.code === 200) {
+      roomParamsData.params = res.data?.params || []
+    } else {
+      ElMessage.error(res.message || '查询失败')
+    }
+  } catch (e) {
+    ElMessage.error('查询失败')
+  } finally {
+    roomParamsLoading.value = false
+  }
+}
+
 function openRoomProfit(row) {
   const p = row.profit || {}
   roomProfit.roomId = row.roomId
@@ -1362,6 +1821,13 @@ async function handleClearViewers(row) {
   loadTables()
 }
 
+async function handleCleanPhantomViewers(row) {
+  // 清理打牌机器人站起后遗留、没坐座位却卡在观众列表里的"幽灵观众"（历史遗留 bug 修复）
+  const res = await cleanPhantomRobotViewers({ roomId: row.roomId })
+  ElMessage.success(res.message || `已清理 ${res.data?.removed ?? 0} 个幽灵观众`)
+  loadTables()
+}
+
 async function handleAdjustViewers(row) {
   // 围观机器人集合不变，只换昵称+随机顺序（程序也会按 viewer_adjust_seconds 周期自动调整，默认5分钟）
   const res = await adjustRobotViewers({ roomId: row.roomId })
@@ -1409,4 +1875,9 @@ onMounted(() => {
 .profit-help p { margin: 4px 0; font-size: 13px; line-height: 1.6; }
 .net-win { color: #f56c6c; font-weight: 600; }
 .net-lose { color: #67c23a; font-weight: 600; }
+.holiday-cal-cell { height: 100%; min-height: 56px; padding: 2px 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 4px; }
+.holiday-cal-cell:hover { background: #f5f7fa; }
+.holiday-cal-cell.is-weekend { background: #fdf6ec; }
+.holiday-cal-cell.is-holiday { background: #fef0f0; }
+.holiday-cal-day { font-size: 13px; font-weight: 600; }
 </style>

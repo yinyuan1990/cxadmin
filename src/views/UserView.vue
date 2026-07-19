@@ -37,6 +37,7 @@
             </el-input>
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" :loading="loading" @click="handleReset">重置</el-button>
+            <el-button type="danger" plain @click="openBanList">封禁名单</el-button>
           </div>
         </div>
       </template>
@@ -75,8 +76,8 @@
         </el-table-column>
         <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
-              {{ row.status === 1 ? '正常' : '冻结' }}
+            <el-tag :type="statusTagType(row.status)" size="small">
+              {{ statusText(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -106,6 +107,15 @@
                   <el-dropdown-item command="resetPassword" divided>修改密码</el-dropdown-item>
                   <el-dropdown-item command="scoreLog">积分变动</el-dropdown-item>
                   <el-dropdown-item command="diamondLog">钻石变动</el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="(!row.isRobot || row.isRobot === 0) && row.status !== 4"
+                    command="ban" divided
+                  >
+                    <span style="color:#f56c6c">全网封禁</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 4" command="unban" divided>
+                    <span style="color:#67c23a">解除封禁</span>
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -314,6 +324,109 @@
 
       <el-empty v-if="!logLoading && logList.length === 0" description="暂无变动记录" />
     </el-dialog>
+
+    <!-- 全网封禁弹窗 -->
+    <el-dialog
+      v-model="banVisible"
+      title="全网封禁"
+      width="440px"
+      destroy-on-close
+    >
+      <el-alert type="warning" :closable="false" style="margin-bottom: 14px">
+        封禁后该用户<b>全网禁止登录</b>，并立即清除登录状态强制下线。
+      </el-alert>
+      <el-form :model="banForm" label-width="80px">
+        <el-form-item label="用户">
+          <span>{{ banForm.username }}（编号: {{ banForm.numberId || '-' }}，ID: {{ banForm.userId }}）</span>
+        </el-form-item>
+        <el-form-item label="封禁原因">
+          <el-input
+            v-model="banForm.reason"
+            type="textarea"
+            :rows="3"
+            maxlength="200"
+            show-word-limit
+            placeholder="选填，供封禁名单展示"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="banVisible = false">取消</el-button>
+        <el-button type="danger" :loading="banning" @click="handleBan">确认封禁</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 封禁名单弹窗 -->
+    <el-dialog
+      v-model="banListVisible"
+      title="封禁名单（全网）"
+      width="860px"
+      destroy-on-close
+    >
+      <div style="margin-bottom: 12px; display: flex; gap: 8px">
+        <el-input
+          v-model="banListKeyword"
+          placeholder="搜索手机号/用户名/编号"
+          clearable
+          style="width: 260px"
+          @keyup.enter="handleBanListSearch"
+          @clear="handleBanListSearch"
+        />
+        <el-button type="primary" @click="handleBanListSearch">搜索</el-button>
+      </div>
+      <el-table
+        :data="banList"
+        v-loading="banListLoading"
+        stripe
+        border
+        size="small"
+        style="width: 100%"
+        max-height="450"
+      >
+        <el-table-column label="编号" prop="numberId" width="80" align="center" />
+        <el-table-column label="用户名" prop="username" width="120" show-overflow-tooltip />
+        <el-table-column label="头像" width="60" align="center">
+          <template #default="{ row }">
+            <el-avatar :size="28" :src="row.avatar" v-if="row.avatar" />
+            <el-avatar :size="28" v-else><el-icon><User /></el-icon></el-avatar>
+          </template>
+        </el-table-column>
+        <el-table-column label="手机号" prop="phone" width="120" />
+        <el-table-column label="钻石" prop="diamond" width="90" align="right">
+          <template #default="{ row }">
+            <span class="diamond-value">{{ formatNum(row.diamond) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="封禁原因" prop="banReason" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.banReason || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="封禁时间" width="150">
+          <template #default="{ row }">
+            {{ formatTime(row.bannedAt) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button type="success" size="small" link @click="handleUnbanFromList(row)">解封</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-wrap" v-if="banListTotal > 0">
+        <el-pagination
+          v-model:current-page="banListPage"
+          :page-size="banListPageSize"
+          :total="banListTotal"
+          layout="total, prev, pager, next"
+          @current-change="loadBanList"
+          small
+        />
+      </div>
+
+      <el-empty v-if="!banListLoading && banList.length === 0" description="暂无封禁用户" />
+    </el-dialog>
   </div>
 </template>
 
@@ -321,7 +434,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, User, ArrowDown } from '@element-plus/icons-vue'
-import { getUserList, adjustGameScore, adjustDiamond, resetUserPassword, getScoreLog, getDiamondLog, updateUserAvatar, uploadAvatar } from '../api/index'
+import { getUserList, adjustGameScore, adjustDiamond, resetUserPassword, getScoreLog, getDiamondLog, updateUserAvatar, uploadAvatar, banUser, unbanUser, getBanList } from '../api/index'
 
 const loading = ref(false)
 const userList = ref([])
@@ -400,6 +513,160 @@ function handleCommand(cmd, row) {
     case 'resetPassword': openResetPassword(row); break
     case 'scoreLog':     openLog(row, 'score'); break
     case 'diamondLog':   openLog(row, 'diamond'); break
+    case 'ban':          openBan(row); break
+    case 'unban':        handleUnbanUser(row); break
+  }
+}
+
+// ==================== 全网封禁 ====================
+// 状态：1=正常 2=冻结 3=已注销 4=封禁
+function statusText(status) {
+  switch (status) {
+    case 1: return '正常'
+    case 2: return '冻结'
+    case 3: return '已注销'
+    case 4: return '封禁'
+    default: return '未知'
+  }
+}
+
+function statusTagType(status) {
+  switch (status) {
+    case 1: return 'success'
+    case 2: return 'warning'
+    case 3: return 'info'
+    case 4: return 'danger'
+    default: return 'info'
+  }
+}
+
+const banVisible = ref(false)
+const banning = ref(false)
+const banForm = ref({ userId: null, username: '', numberId: '', reason: '' })
+
+function openBan(row) {
+  if (row.isRobot === 1 || row.isRobot === 2) {
+    ElMessage.warning('机器人不能封禁，只有真人才能操作')
+    return
+  }
+  banForm.value = { userId: row.id, username: row.username, numberId: row.numberId, reason: '' }
+  banVisible.value = true
+}
+
+async function handleBan() {
+  const { userId, username, reason } = banForm.value
+  try {
+    await ElMessageBox.confirm(
+      `确认全网封禁用户 ${username}？封禁后将禁止登录并立即踢下线。`,
+      '确认封禁',
+      { confirmButtonText: '确认封禁', cancelButtonText: '取消', type: 'error' }
+    )
+  } catch {
+    return
+  }
+  banning.value = true
+  try {
+    const res = await banUser(userId, reason || undefined)
+    if (res.code === 200) {
+      ElMessage.success('封禁成功，该用户已被踢下线')
+      banVisible.value = false
+      await loadUsers()
+    } else {
+      ElMessage.error(res.message || '封禁失败')
+    }
+  } catch {
+    // 拦截器已处理
+  } finally {
+    banning.value = false
+  }
+}
+
+async function handleUnbanUser(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认解除用户 ${row.username} 的全网封禁？解封后可正常登录。`,
+      '确认解封',
+      { confirmButtonText: '确认解封', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await unbanUser(row.id)
+    if (res.code === 200) {
+      ElMessage.success('解封成功')
+      await loadUsers()
+    } else {
+      ElMessage.error(res.message || '解封失败')
+    }
+  } catch {
+    // 拦截器已处理
+  }
+}
+
+// 封禁名单
+const banListVisible = ref(false)
+const banListLoading = ref(false)
+const banList = ref([])
+const banListKeyword = ref('')
+const banListPage = ref(1)
+const banListPageSize = 20
+const banListTotal = ref(0)
+
+function openBanList() {
+  banListKeyword.value = ''
+  banListPage.value = 1
+  banListVisible.value = true
+  loadBanList()
+}
+
+function handleBanListSearch() {
+  banListPage.value = 1
+  loadBanList()
+}
+
+async function loadBanList() {
+  banListLoading.value = true
+  try {
+    const res = await getBanList({
+      page: banListPage.value,
+      pageSize: banListPageSize,
+      keyword: banListKeyword.value || undefined
+    })
+    if (res.code === 200) {
+      banList.value = res.data.content || []
+      banListTotal.value = res.data.totalElements || 0
+    } else {
+      ElMessage.error(res.message || '加载失败')
+    }
+  } catch {
+    // 拦截器已处理
+  } finally {
+    banListLoading.value = false
+  }
+}
+
+async function handleUnbanFromList(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认解除用户 ${row.username} 的全网封禁？`,
+      '确认解封',
+      { confirmButtonText: '确认解封', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await unbanUser(row.id)
+    if (res.code === 200) {
+      ElMessage.success('解封成功')
+      await loadBanList()
+      await loadUsers()
+    } else {
+      ElMessage.error(res.message || '解封失败')
+    }
+  } catch {
+    // 拦截器已处理
   }
 }
 

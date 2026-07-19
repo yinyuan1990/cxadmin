@@ -62,12 +62,39 @@ export function updateUserAvatar(userId, avatar) {
   return request.post('/admin/user/updateAvatar', { userId, avatar })
 }
 
+// ⭐ 全网封禁：封禁后禁止登录并立即踢下线（机器人不可封）
+export function banUser(userId, reason) {
+  return request.post('/admin/user/ban', { userId, reason })
+}
+
+// ⭐ 解除封禁
+export function unbanUser(userId) {
+  return request.post('/admin/user/unban', { userId })
+}
+
+// ⭐ 封禁名单（分页，keyword 可搜手机号/用户名/编号）
+export function getBanList(params) {
+  return request.get('/admin/user/banList', { params })
+}
+
 export function getScoreLog(params) {
   return request.get('/admin/user/scoreLog', { params })
 }
 
 export function getDiamondLog(params) {
   return request.get('/admin/user/diamondLog', { params })
+}
+
+// ---- 钻石消耗统计 ----
+
+// 按俱乐部统计钻石消耗（今日/累计，可选 startDate/endDate 区间）
+export function getDiamondConsumeStats(params) {
+  return request.get('/admin/diamondConsumeStats', { params })
+}
+
+// 钻石消耗详情（点击俱乐部行，分tab：room/club/other/transfer）
+export function getDiamondConsumeDetail(params) {
+  return request.get('/admin/diamondConsumeDetail', { params })
 }
 
 // ---- 授信日志接口 ----
@@ -357,6 +384,16 @@ export function setQueueKeepSeconds(seconds) {
   return request.post('/api/system/config/queueKeepSeconds', { seconds })
 }
 
+// ---- 排队合并-是否要求排队人数也相同(false默认=忽略排队人数差异也合并;true=要求相同才合并) ----
+
+export function getQueueMergeRequireSamePlayerCount() {
+  return request.get('/api/system/config/queueMergeRequireSamePlayerCount')
+}
+
+export function setQueueMergeRequireSamePlayerCount(enabled) {
+  return request.post('/api/system/config/queueMergeRequireSamePlayerCount', { enabled })
+}
+
 // ---- 钻石兑换金币比例（1钻=N金币，单向兑换，MTT金币赛报名货币） ----
 
 export function getGoldPerDiamond() {
@@ -405,6 +442,26 @@ export function getBonusPoolEnabled() {
 
 export function toggleBonusPoolEnabled(enabled) {
   return request.post('/api/system/config/bonusPoolEnabled', { enabled })
+}
+
+// ---- v2奖池:抽取规则（门槛倍数/抽取倍数） ----
+
+export function getBonusPoolRule() {
+  return request.get('/api/system/config/bonusPoolRule')
+}
+
+export function setBonusPoolRule(winMultiplier, extractMultiplier) {
+  return request.post('/api/system/config/bonusPoolRule', { winMultiplier, extractMultiplier })
+}
+
+// ---- v2奖池:俱乐部奖池数据 ----
+
+export function listClubBonusPools(clubId) {
+  return request.get('/admin/bonusPool/list', { params: clubId ? { clubId } : {} })
+}
+
+export function setClubBonusPool(clubId, balance) {
+  return request.post('/admin/bonusPool/set', { clubId, balance })
 }
 
 // ---- 强制秀牌费用 ----
@@ -638,6 +695,11 @@ export function listRobotTables(clubId) {
   return request.get('/admin/robot/tables', { params: { clubId } })
 }
 
+// 查看某张桌子当前实际生效的机器人拟真参数（建房覆盖 + 俱乐部默认）
+export function getRobotRoomParams(roomId) {
+  return request.get('/admin/robot/roomParams', { params: { roomId } })
+}
+
 export function generateClubRobots(data) {
   // data: { clubId, count, namePrefix?, password?, avatar?, avatars?, initScore? }
   return request.post('/admin/robot/generate', data)
@@ -753,9 +815,51 @@ export function clearRobotViewers(data) {
   return request.post('/admin/robot/viewers/clear', data)
 }
 
+// 清理"幽灵观众"：打牌机器人站起后遗留、未坐座位却卡在观众列表里的记录
+export function cleanPhantomRobotViewers(data) {
+  // data: { roomId }
+  return request.post('/admin/robot/viewers/cleanPhantom', data)
+}
+
+// 机器人围观-节假日系数配置
+export function getHolidayViewerConfig() {
+  return request.get('/api/system/config/holidayViewerConfig')
+}
+
+export function setHolidayViewerConfig(data) {
+  // data: { holidayDates?: string[], weekendCoefficient?: number, holidayCoefficient?: number }
+  return request.post('/api/system/config/holidayViewerConfig', data)
+}
+
 export function adjustRobotViewers(data) {
   // data: { roomId } 围观机器人集合不变，只换昵称+随机顺序
   return request.post('/admin/robot/viewers/adjust', data)
+}
+
+// ---- 半自动机器人操作员账号管理(超管) ----
+
+export function listSemiRobotOperators() {
+  return request.get('/admin/semiRobotOperator/list')
+}
+
+export function createSemiRobotOperator(data) {
+  // data: { username, password, remark?, clubIds?: number[] }
+  return request.post('/admin/semiRobotOperator/create', data)
+}
+
+export function assignSemiRobotOperatorClubs(data) {
+  // data: { operatorId, clubIds: number[] } 整体覆盖
+  return request.post('/admin/semiRobotOperator/assignClubs', data)
+}
+
+export function resetSemiRobotOperatorPassword(data) {
+  // data: { operatorId, password }
+  return request.post('/admin/semiRobotOperator/resetPassword', data)
+}
+
+export function setSemiRobotOperatorStatus(data) {
+  // data: { operatorId, status }
+  return request.post('/admin/semiRobotOperator/setStatus', data)
 }
 
 // ---- 服务器日志下载 / 清理 ----

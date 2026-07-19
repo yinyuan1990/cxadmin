@@ -36,6 +36,12 @@ const routes = [
         meta: { title: '授信日志' }
       },
       {
+        path: 'diamond-consume',
+        name: 'DiamondConsume',
+        component: () => import('../views/DiamondConsumeView.vue'),
+        meta: { title: '钻石消耗统计' }
+      },
+      {
         path: 'commission',
         name: 'Commission',
         component: () => import('../views/CommissionView.vue'),
@@ -94,6 +100,12 @@ const routes = [
         name: 'PrizeItems',
         component: () => import('../views/PrizeItemView.vue'),
         meta: { title: '实物管理' }
+      },
+      {
+        path: 'semi-robot-operator',
+        name: 'SemiRobotOperator',
+        component: () => import('../views/SemiRobotOperatorView.vue'),
+        meta: { title: '半自动机器人操作员' }
       }
     ]
   },

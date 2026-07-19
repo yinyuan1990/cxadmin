@@ -116,7 +116,7 @@
         <div class="test-tool-row">
           <div class="test-tool-info">
             <span class="test-tool-label">奖池（中丁二皇等返利）</span>
-            <span class="test-tool-desc">关闭后所有房间不再从赢家芒果里抽 8% 累积奖池，玩家积分尾数永远是整百，对账更干净。开启则按各房间自身配置生效。</span>
+            <span class="test-tool-desc">奖池为俱乐部级：赢家单手净赢 ≥ 底皮×赢家门槛倍数（默认50）时，抽固定 底皮×抽取倍数（默认4）全额进俱乐部奖池（无系统抽成），倍数可在下方"奖池抽取规则"调整。关闭后所有房间不再抽取/命中/发奖；开启则按各房间自身配置生效。</span>
           </div>
           <el-switch
             v-model="bonusPoolEnabled"
@@ -126,6 +126,41 @@
             active-color="#409EFF"
             @change="handleToggleBonusPoolEnabled"
           />
+        </div>
+        <el-divider style="margin: 12px 0;" />
+        <div class="test-tool-row">
+          <div class="test-tool-info">
+            <span class="test-tool-label">奖池抽取规则</span>
+            <span class="test-tool-desc">单手净赢 ≥ 底皮×门槛倍数 时，抽固定 底皮×抽取倍数 全额进俱乐部奖池（无系统抽成）</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; color:#909399;">门槛倍数</span>
+            <el-input-number
+              v-model="bonusPoolWinMultiplier"
+              :min="1"
+              :max="100000"
+              :step="1"
+              size="small"
+              style="width: 120px;"
+            />
+            <span style="font-size:12px; color:#909399;">抽取倍数</span>
+            <el-input-number
+              v-model="bonusPoolExtractMultiplier"
+              :min="1"
+              :max="10000"
+              :step="1"
+              size="small"
+              style="width: 120px;"
+            />
+            <el-button
+              type="primary"
+              size="small"
+              :loading="bonusPoolRuleSaving"
+              @click="handleSaveBonusPoolRule"
+            >
+              保存
+            </el-button>
+          </div>
         </div>
       </el-card>
 
@@ -261,7 +296,7 @@
               size="small"
               style="width: 140px;"
             />
-            <span style="color:#909399; font-size:12px;">钻石/次</span>
+            <span style="color:#909399; font-size:12px;">单位与钻石余额一致(不做倍数转换)，仅在下方矩阵匹配不到时兜底</span>
             <el-button
               type="warning"
               size="small"
@@ -277,47 +312,49 @@
 
         <div style="padding:12px 0;">
           <div style="margin-bottom:12px;">
-            <span style="font-weight:600; color:#E6A23C;">⭐ v49 / v50: 按房间游戏时间分档扣费（1~5 档位动态配置）</span>
+            <span style="font-weight:600; color:#E6A23C;">⭐ v51: 按"结算时间 × 底注/地皮"矩阵扣费</span>
             <p style="margin:8px 0 0 0; font-size:12px; color:#909399;">
-              根据房间累计游戏时间（不含等人/留座时间）到达不同档位时，扣对应钻石数。<b>精确匹配</b>档位时间才生效。<br/>
-              支持 <b>1 ~ 5</b> 个档位动态增删；档位间 <b>分钟数不能重复</b>。<br/>
-              <span style="color:#909399;">⚠️ 档位的"分钟数"应与下方"可选结算时间"保持一致，否则该结算时间会回退到老配置（默认 5 钻石）。</span>
+              根据房间累计游戏时间（不含等人/留座时间）到达设定档位、且房间底注/地皮匹配时，扣对应钻石数。<b>结算时间 + 底注均精确匹配</b>才生效。<br/>
+              矩阵的<b>行(结算时间) / 列(底注)自动跟随</b>下方「可选结算时间」和「游戏参数 → 可选底注」两个配置联动生成——改了那两处，这里会自动重排，只需重新填每个格子的钻石数。<br/>
+              <span style="color:#909399;">钻石数单位与用户钻石余额<b>完全一致</b>（不会 ×100 也不会 ÷100），填多少就精确扣多少。匹配不到组合时回退到上方的兜底值。</span>
             </p>
           </div>
-          <el-table :data="diamondTiers" border size="small" style="width:100%; max-width:680px;">
-            <el-table-column label="档位" width="80" align="center">
-              <template #default="{ $index }">档位{{ $index + 1 }}</template>
+          <div v-if="diamondMatrixRows.length === 0" style="color:#C0C4CC; font-size:13px;">
+            矩阵为空：请先确认「可选结算时间」和「游戏参数 → 可选底注」都至少配置了 1 项。
+          </div>
+          <el-table v-else :data="diamondMatrixRows" border size="small" style="width:100%; max-width:900px;">
+            <el-table-column label="结算时间＼底注" width="120" align="center" fixed>
+              <template #default="{ row }">{{ row.minutes }} 分钟</template>
             </el-table-column>
-            <el-table-column label="结算时间（分钟）" width="180">
+            <el-table-column
+              v-for="bs in diamondBaseScoreColumns"
+              :key="bs"
+              :label="String(bs)"
+              min-width="120"
+              align="center"
+            >
               <template #default="{ row }">
-                <el-input-number v-model="row.minutes" :min="1" :max="9999" :step="1" size="small" style="width:140px;" />
-              </template>
-            </el-table-column>
-            <el-table-column label="钻石数" width="180">
-              <template #default="{ row }">
-                <el-input-number v-model="row.cost" :min="0" :max="9999" :step="1" size="small" style="width:140px;" />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" align="center">
-              <template #default="{ $index }">
-                <el-button
-                  type="danger"
+                <el-input-number
+                  v-model="row.costMap[bs]"
+                  :min="0"
+                  :max="999999999"
+                  :step="100"
                   size="small"
-                  :disabled="diamondTiers.length <= 1"
-                  @click="removeDiamondTier($index)"
-                >删除</el-button>
+                  style="width:110px;"
+                />
               </template>
             </el-table-column>
           </el-table>
           <div style="margin-top:12px; display:flex; gap:8px;">
+            <el-button size="small" @click="syncDiamondMatrix">按最新列表重排矩阵</el-button>
             <el-button
-              type="primary"
+              type="warning"
               size="small"
-              :disabled="diamondTiers.length >= 5"
-              @click="addDiamondTier"
-            >+ 添加档位（{{ diamondTiers.length }}/5）</el-button>
-            <el-button type="warning" size="small" :loading="diamondTiersSaving" @click="handleSaveDiamondTiers">
-              保存档位配置
+              :loading="diamondTiersSaving"
+              :disabled="diamondMatrixRows.length === 0"
+              @click="handleSaveDiamondTiers"
+            >
+              保存矩阵配置
             </el-button>
           </div>
         </div>
@@ -518,6 +555,47 @@
         </div>
       </el-card>
 
+      <!-- ⭐ 机器人围观-节假日系数 -->
+      <el-card class="ghost-expire-card" shadow="never" style="margin-top:16px;">
+        <template #header>
+          <span style="font-weight:600; color:#E6A23C;">机器人围观-节假日系数</span>
+        </template>
+        <div class="test-tool-row">
+          <div class="test-tool-info">
+            <span class="test-tool-label">法定节假日日期列表</span>
+            <span class="test-tool-desc">
+              机器人围观目标人数 = 基础基数 × 小时系数 × 日期系数 × 在座热度系数。这里维护"法定节假日"日期表，命中则用节假日系数，否则周六日用周末系数，平日固定100%。<br/>
+              <span style="color:#67C23A;">格式：一行一个日期，yyyy-MM-dd</span>
+            </span>
+          </div>
+        </div>
+        <el-input
+          v-model="holidayDatesText"
+          type="textarea"
+          :rows="4"
+          placeholder="2026-01-01&#10;2026-02-16&#10;2026-02-17"
+          style="margin-top:8px"
+        />
+        <div class="test-tool-row" style="margin-top:12px;">
+          <div class="test-tool-info">
+            <span class="test-tool-label">周末系数（%）</span>
+            <span class="test-tool-desc">非法定节假日的周六/周日，围观基础人数按此系数放大。默认 120。</span>
+          </div>
+          <el-input-number v-model="weekendViewerCoefficient" :min="50" :max="300" size="small" style="width:140px" />
+        </div>
+        <div class="test-tool-row" style="margin-top:8px;">
+          <div class="test-tool-info">
+            <span class="test-tool-label">节假日系数（%）</span>
+            <span class="test-tool-desc">命中上面日期列表时用此系数，优先级高于周末系数。默认 130。</span>
+          </div>
+          <el-input-number v-model="holidayViewerCoefficient" :min="50" :max="300" size="small" style="width:140px" />
+        </div>
+        <div style="margin-top:12px; text-align:right;">
+          <span style="color:#909399; font-size:12px; margin-right:12px;">今日系数：{{ todayViewerCoefficient }}%</span>
+          <el-button type="primary" size="small" :loading="holidayViewerSaving" @click="handleSaveHolidayViewerConfig">保存</el-button>
+        </div>
+      </el-card>
+
       <!-- ⭐ 周期结算补带入 -->
       <el-card class="period-settle-card" shadow="never" style="margin-top:16px;">
         <template #header>
@@ -662,6 +740,31 @@
             >
               保存
             </el-button>
+          </div>
+        </div>
+      </el-card>
+
+      <!-- ⭐ 排队合并-是否要求排队人数也相同 -->
+      <el-card class="queue-keep-card" shadow="never" style="margin-top:16px;">
+        <template #header>
+          <span style="font-weight:600; color:#409EFF;">排队合并规则</span>
+        </template>
+        <div class="test-tool-row">
+          <div class="test-tool-info">
+            <span class="test-tool-label">要求排队人数也相同才合并</span>
+            <span class="test-tool-desc">
+              同一俱乐部里，多个"属性完全相同"（底注/地王/三花/GPS/佣金/结算时间/芒果/机器人标记等）的排队房，
+              底层会自动合并成一个总排队池，不管玩家点的是哪一个排队房都在同一个池子里排。<br/>
+              <span style="color:#67C23A;">关闭(默认)：排队人数(开局人数)不参与"是否同属性"的判断——即使几个排队房设置的开局人数不同，也会合并。</span><br/>
+              <span style="color:#F56C6C;">开启：排队人数不同就算不同属性，各自独立排队，不合并。</span>
+            </span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <el-switch
+              v-model="queueMergeRequireSamePlayerCount"
+              :loading="queueMergeSaving"
+              @change="handleSaveQueueMergeRequireSamePlayerCount"
+            />
           </div>
         </div>
       </el-card>
@@ -865,10 +968,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Edit } from '@element-plus/icons-vue'
-import { getAllConfigs, updateConfig, getDealRules, setDealRules, getBonusPoolEnabled, toggleBonusPoolEnabled, getForceShowCardCost, setForceShowCardCost, getRegisterNicknameMaxLength, setRegisterNicknameMaxLength, getClubNameMaxLength, setClubNameMaxLength, getCommissionRateMax, setCommissionRateMax, getCommissionSettleDiamondCost, setCommissionSettleDiamondCost, getCommissionSettleDiamondTiers, setCommissionSettleDiamondTiers, getAvailableSettleTime, setAvailableSettleTime, getDebugTraceEnabled, toggleDebugTraceEnabled, getRunAwayPenaltyConfig, setRunAwayPenaltyConfig, getWinnerEarlyLeaveConfig, setWinnerEarlyLeaveConfig, getGpsConfig, setGpsConfig, getChatMessageTtl, setChatMessageTtl, getGhostExpireSeconds, setGhostExpireSeconds, getPeriodSettleBringInSeconds, setPeriodSettleBringInSeconds, getInsufficientChipsProtectSeconds, setInsufficientChipsProtectSeconds, getSoloWaitTimeout, setSoloWaitTimeout, getQueueKeepSeconds, setQueueKeepSeconds, getGoldPerDiamond, setGoldPerDiamond } from '../api/index'
+import { getAllConfigs, updateConfig, getDealRules, setDealRules, getBonusPoolEnabled, toggleBonusPoolEnabled, getBonusPoolRule, setBonusPoolRule, getForceShowCardCost, setForceShowCardCost, getRegisterNicknameMaxLength, setRegisterNicknameMaxLength, getClubNameMaxLength, setClubNameMaxLength, getCommissionRateMax, setCommissionRateMax, getCommissionSettleDiamondCost, setCommissionSettleDiamondCost, getCommissionSettleDiamondTiers, setCommissionSettleDiamondTiers, getAvailableSettleTime, setAvailableSettleTime, getDebugTraceEnabled, toggleDebugTraceEnabled, getRunAwayPenaltyConfig, setRunAwayPenaltyConfig, getWinnerEarlyLeaveConfig, setWinnerEarlyLeaveConfig, getGpsConfig, setGpsConfig, getChatMessageTtl, setChatMessageTtl, getGhostExpireSeconds, setGhostExpireSeconds, getPeriodSettleBringInSeconds, setPeriodSettleBringInSeconds, getInsufficientChipsProtectSeconds, setInsufficientChipsProtectSeconds, getSoloWaitTimeout, setSoloWaitTimeout, getQueueKeepSeconds, setQueueKeepSeconds, getQueueMergeRequireSamePlayerCount, setQueueMergeRequireSamePlayerCount, getGoldPerDiamond, setGoldPerDiamond, getHolidayViewerConfig, setHolidayViewerConfig } from '../api/index'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -982,6 +1085,39 @@ async function handleToggleBonusPoolEnabled(val) {
   }
 }
 
+// ⭐ v2奖池:抽取规则（门槛倍数/抽取倍数）
+const bonusPoolWinMultiplier = ref(50)
+const bonusPoolExtractMultiplier = ref(4)
+const bonusPoolRuleSaving = ref(false)
+
+async function loadBonusPoolRule() {
+  try {
+    const res = await getBonusPoolRule()
+    if (res.code === 200) {
+      bonusPoolWinMultiplier.value = res.data.winMultiplier
+      bonusPoolExtractMultiplier.value = res.data.extractMultiplier
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function handleSaveBonusPoolRule() {
+  bonusPoolRuleSaving.value = true
+  try {
+    const res = await setBonusPoolRule(bonusPoolWinMultiplier.value, bonusPoolExtractMultiplier.value)
+    if (res.code === 200) {
+      ElMessage.success('奖池抽取规则已保存：门槛' + bonusPoolWinMultiplier.value + '倍 / 抽取' + bonusPoolExtractMultiplier.value + '倍')
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    bonusPoolRuleSaving.value = false
+  }
+}
+
 // ⭐ 注册昵称最大长度
 const registerNicknameMaxLength = ref(4)
 const nicknameSaving = ref(false)
@@ -1074,68 +1210,91 @@ async function handleSaveDiamondCost() {
   }
 }
 
-// ⭐ v49 / v50: 周期返点扣群主钻石档位配置（1~5 个动态）
-const diamondTiers = ref([
-  { minutes: 30, cost: 5 }
-])
+// ⭐ v51: 周期扣群主钻石档位 —— 矩阵 = 可选结算时间(行) × 可选底注/地皮(列)。
+//   矩阵形状完全由「available_settle_time」和「available_base_scores」两个配置派生，
+//   两者任一变化时都会自动重排矩阵（改行列，不丢已填的钻石数）。
+const diamondMatrixRows = ref([])   // [{ minutes, costMap: { [baseScore]: cost } }]
 const diamondTiersSaving = ref(false)
+let savedTierCostMap = {}           // 服务端已保存值,key = `${minutes}_${baseScore}`
+
+function parseAvailableBaseScoresFromConfigs() {
+  const map = {}
+  configs.value.forEach(c => { map[c.configKey] = c.configValue })
+  let bases = []
+  const baseStr = map['available_base_scores']
+  if (baseStr) {
+    bases = String(baseStr)
+      .split(',')
+      .map(s => Number(String(s).trim()))
+      .filter(n => Number.isFinite(n) && n > 0)
+  }
+  return [...new Set(bases)]
+}
+
+const diamondBaseScoreColumns = computed(() => parseAvailableBaseScoresFromConfigs())
+
+function diamondTierComboKey(minutes, baseScore) {
+  return minutes + '_' + baseScore
+}
+
+// 按当前"可选结算时间" × "可选底注"重建矩阵形状：已填的格子沿用旧值，新组合从服务端已保存值兜底(否则 0)。
+// forceFromSaved=true：忽略当前矩阵里的旧值，强制以 savedTierCostMap(服务端数据)重建 ——
+//   仅在 loadDiamondTiers() 首次拿到服务端数据时用一次，避免加载竞态期间产生的占位 0 被"当成已有值"保留下来。
+function syncDiamondMatrix(forceFromSaved = false) {
+  const minutesList = availableSettleTimeList.value.map(i => Number(i.value)).filter(n => n > 0)
+  const baseScoreList = parseAvailableBaseScoresFromConfigs()
+  if (minutesList.length === 0 || baseScoreList.length === 0) {
+    diamondMatrixRows.value = []
+    return
+  }
+  const prevRows = forceFromSaved ? [] : diamondMatrixRows.value
+  diamondMatrixRows.value = minutesList.map(minutes => {
+    const prevRow = prevRows.find(r => r.minutes === minutes)
+    const costMap = {}
+    baseScoreList.forEach(bs => {
+      const prevCost = prevRow ? prevRow.costMap[bs] : undefined
+      const key = diamondTierComboKey(minutes, bs)
+      costMap[bs] = prevCost != null ? prevCost : (savedTierCostMap[key] != null ? savedTierCostMap[key] : 0)
+    })
+    return { minutes, costMap }
+  })
+}
 
 async function loadDiamondTiers() {
   try {
     const res = await getCommissionSettleDiamondTiers()
-    if (res.code === 200 && Array.isArray(res.data?.tiers) && res.data.tiers.length > 0) {
-      diamondTiers.value = res.data.tiers.map(t => ({
-        minutes: Number(t.minutes) || 1,
-        cost: Number(t.cost) || 0
-      }))
-    } else {
-      diamondTiers.value = [{ minutes: 30, cost: 5 }]
+    savedTierCostMap = {}
+    if (res.code === 200 && Array.isArray(res.data?.tiers)) {
+      res.data.tiers.forEach(t => {
+        savedTierCostMap[diamondTierComboKey(Number(t.minutes), Number(t.baseScore))] = Number(t.cost) || 0
+      })
     }
   } catch {
     // ignore
+  } finally {
+    syncDiamondMatrix(true)
   }
-}
-
-function addDiamondTier() {
-  if (diamondTiers.value.length >= 5) {
-    ElMessage.warning('最多 5 个档位')
-    return
-  }
-  const last = diamondTiers.value[diamondTiers.value.length - 1]
-  diamondTiers.value.push({
-    minutes: (last?.minutes || 30) + 30,
-    cost: (last?.cost || 5) + 5
-  })
-}
-
-function removeDiamondTier(index) {
-  if (diamondTiers.value.length <= 1) {
-    ElMessage.warning('至少保留 1 个档位')
-    return
-  }
-  diamondTiers.value.splice(index, 1)
 }
 
 async function handleSaveDiamondTiers() {
-  // 前端校验：minutes 互不重复
-  const seen = new Set()
-  for (const t of diamondTiers.value) {
-    if (!t.minutes || t.minutes < 1) {
-      ElMessage.error('档位结算时间必须 ≥ 1 分钟')
-      return
-    }
-    if (seen.has(t.minutes)) {
-      ElMessage.error('档位结算时间重复: ' + t.minutes + ' 分钟')
-      return
-    }
-    seen.add(t.minutes)
+  if (diamondMatrixRows.value.length === 0) {
+    ElMessage.error('矩阵为空:请先配置好「可选结算时间」和「游戏参数→可选底注」')
+    return
   }
+  const tiers = []
+  diamondMatrixRows.value.forEach(row => {
+    Object.keys(row.costMap).forEach(bsKey => {
+      tiers.push({ minutes: row.minutes, baseScore: Number(bsKey), cost: Number(row.costMap[bsKey]) || 0 })
+    })
+  })
 
   diamondTiersSaving.value = true
   try {
-    const res = await setCommissionSettleDiamondTiers(diamondTiers.value)
+    const res = await setCommissionSettleDiamondTiers(tiers)
     if (res.code === 200) {
-      ElMessage.success('已保存 ' + diamondTiers.value.length + ' 个档位')
+      ElMessage.success('已保存 ' + tiers.length + ' 个档位(结算时间×底注)')
+      savedTierCostMap = {}
+      tiers.forEach(t => { savedTierCostMap[diamondTierComboKey(t.minutes, t.baseScore)] = t.cost })
     } else {
       ElMessage.error(res.message || '保存失败')
     }
@@ -1149,6 +1308,9 @@ async function handleSaveDiamondTiers() {
 // ⭐ v50: 可选结算时间(创建房间下拉框选项)
 const availableSettleTimeList = ref([{ value: 30 }])
 const availableSettleTimeSaving = ref(false)
+
+// ⭐ v51: 可选结算时间列表变化(增删/改值/保存后重载)时,自动重排周期扣钻石矩阵的行
+watch(availableSettleTimeList, () => syncDiamondMatrix(), { deep: true })
 
 async function loadAvailableSettleTime() {
   try {
@@ -1505,6 +1667,51 @@ async function handleSaveGhostExpire() {
   }
 }
 
+// ⭐ 机器人围观-节假日系数
+const holidayDatesText = ref('')
+const weekendViewerCoefficient = ref(120)
+const holidayViewerCoefficient = ref(130)
+const todayViewerCoefficient = ref(100)
+const holidayViewerSaving = ref(false)
+
+async function loadHolidayViewerConfig() {
+  try {
+    const res = await getHolidayViewerConfig()
+    if (res.code === 200 && res.data) {
+      const dates = res.data.holidayDates || []
+      holidayDatesText.value = Array.isArray(dates) ? dates.join('\n') : ''
+      weekendViewerCoefficient.value = Number(res.data.weekendCoefficient) || 120
+      holidayViewerCoefficient.value = Number(res.data.holidayCoefficient) || 130
+      todayViewerCoefficient.value = Number(res.data.todayCoefficient) || 100
+    }
+  } catch { /* ignore */ }
+}
+
+async function handleSaveHolidayViewerConfig() {
+  const dates = holidayDatesText.value
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s))
+  holidayViewerSaving.value = true
+  try {
+    const res = await setHolidayViewerConfig({
+      holidayDates: dates,
+      weekendCoefficient: weekendViewerCoefficient.value,
+      holidayCoefficient: holidayViewerCoefficient.value
+    })
+    if (res.code === 200) {
+      ElMessage.success('已保存')
+      if (res.data) todayViewerCoefficient.value = Number(res.data.todayCoefficient) || 100
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    holidayViewerSaving.value = false
+  }
+}
+
 // ⭐ 周期结算后补带入等待秒数
 const periodSettleBringInSeconds = ref(10)
 const periodSettleBringInSaving = ref(false)
@@ -1655,6 +1862,37 @@ async function handleSaveQueueKeep() {
     ElMessage.error(e.message || '保存失败')
   } finally {
     queueKeepSaving.value = false
+  }
+}
+
+// ⭐ 排队合并-是否要求排队人数也相同(false默认=忽略排队人数差异也合并)
+const queueMergeRequireSamePlayerCount = ref(false)
+const queueMergeSaving = ref(false)
+
+async function loadQueueMergeRequireSamePlayerCount() {
+  try {
+    const res = await getQueueMergeRequireSamePlayerCount()
+    if (res.code === 200 && res.data) {
+      queueMergeRequireSamePlayerCount.value = !!res.data.enabled
+    }
+  } catch { /* ignore */ }
+}
+
+async function handleSaveQueueMergeRequireSamePlayerCount(val) {
+  queueMergeSaving.value = true
+  try {
+    const res = await setQueueMergeRequireSamePlayerCount(val)
+    if (res.code === 200) {
+      ElMessage.success(val ? '已开启：排队人数不同不合并' : '已关闭：忽略排队人数差异也合并(默认)')
+    } else {
+      ElMessage.error(res.message || '保存失败')
+      queueMergeRequireSamePlayerCount.value = !val // 失败回滚
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+    queueMergeRequireSamePlayerCount.value = !val
+  } finally {
+    queueMergeSaving.value = false
   }
 }
 
@@ -1823,11 +2061,6 @@ const GROUP_DEFS = [
     ]
   },
   {
-    key: 'register',
-    label: '注册奖励',
-    keys: ['register_gift_balance', 'register_gift_diamond']
-  },
-  {
     key: 'other',
     label: '其他',
     keys: []  // 兜底：不属于上面任何分组的配置
@@ -1877,6 +2110,7 @@ async function loadConfigs() {
     if (res.code === 200) {
       configs.value = res.data || []
       buildFeastFromConfigs()  // ⭐ 重建丁皇吃席按底皮编辑行（依赖 available_base_scores）
+      syncDiamondMatrix()      // ⭐ v51: 底注列表变化时同步重排周期扣钻石矩阵
     } else {
       ElMessage.error(res.message || '加载失败')
     }
@@ -1925,23 +2159,26 @@ onMounted(() => {
   loadConfigs()
   loadDealRules()  // ⭐ 指定发牌（测试）规则（Redis）
   loadBonusPoolEnabled()
+  loadBonusPoolRule()  // ⭐ v2奖池:抽取规则
   loadDebugTraceEnabled()
   loadRegisterNicknameMaxLength()
   loadClubNameMaxLength()
   loadCommissionRateMax()
   loadCommissionSettleDiamondCost()
-  loadDiamondTiers()  // ⭐ v49 / v50: 加载档位配置（1~5 动态）
-  loadAvailableSettleTime()  // ⭐ v50: 加载可选结算时间
+  loadDiamondTiers()  // ⭐ v51: 加载周期扣钻石矩阵档位(结算时间×底注)
+  loadAvailableSettleTime()  // ⭐ v50: 加载可选结算时间(变化时会自动重排上面的矩阵)
   loadForceShowCardCost()
   loadRunAwayConfig()
   loadWinnerEarlyLeaveConfig()
   loadGpsConfig()
   loadChatTtl()
   loadGhostExpireSeconds()
+  loadHolidayViewerConfig()
   loadPeriodSettleBringInSeconds()
   loadInsufficientChipsProtectSeconds()
   loadSoloWaitTimeout()
   loadQueueKeepSeconds()  // ⭐ 排队保队时间
+  loadQueueMergeRequireSamePlayerCount()  // ⭐ 排队合并-是否要求排队人数也相同
   loadGoldPerDiamond()    // ⭐ 钻石兑换金币比例
 })
 </script>
