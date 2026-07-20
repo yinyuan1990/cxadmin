@@ -407,8 +407,11 @@
                 <el-input-number v-model="batch.bringInMultiplierMax" :min="1" :max="100000" placeholder="最大倍数" style="width:110px" @change="onBringInRangeManuallyEdited" />
                 <span style="margin:0 4px">步长</span>
                 <el-input-number v-model="batch.bringInMultiplierStep" :min="1" :max="100000" placeholder="步长" style="width:100px" @change="onBringInRangeManuallyEdited" />
-                <span class="hint">三项都填才生效：每个机器人坐下各自在[最小,最大]按步长随机抽一个倍数×底注当带入，不再统一一个数字(比如填50/200/50，就在50/100/150/200四个里随机抽)。
-                  <b>改底注(输入或下拉)会自动匹配推荐值</b>(底注≥20→50~250/50；5~10→100~500/100；2→250~1250/250；1→500~2500/500)，手动改过这三项后不再自动覆盖</span>
+                <span class="hint"><b style="color:#67C23A">{{ bringInAmountText }}</b>。
+                  三项都填才生效：每个机器人坐下各自在[最小,最大]按步长随机抽一个倍数×底注当带入，不再统一一个数字。
+                  <b>改底注(输入或下拉)会自动匹配推荐值</b>：底注1→500~2500/500；2→250~1250/250；5~10→100~500/100；
+                  20~100→50~250/50；200→40~200/40；500→30~150/30；1000→20~100/20（小底注抬倍数、大底注压倍数，带入金额始终在合理量级）。
+                  手动改过这三项后不再自动覆盖</span>
               </el-form-item>
               <el-form-item label="三花"><el-switch v-model="batch.sanHua" /></el-form-item>
               <el-form-item label="地九王"><el-switch v-model="batch.diWang" /></el-form-item>
@@ -1227,12 +1230,26 @@ const batch = reactive({
 const baseScoreOptions = ref([1, 2, 5, 10, 20, 50, 100])
 const quickBaseScore = ref(null)
 
+// 每档底注一个推荐带入倍数区间：小底注抬高倍数(保证带入金额量级)、大底注压低倍数(避免带入金额爆炸)。
+// 换算出来的带入金额：1→500~2500 | 2→500~2500 | 5→500~2500 | 10→1000~5000 | 20→1000~5000
+//                   50→2500~12500 | 100→5000~25000 | 200→8000~40000 | 500→15000~75000 | 1000→20000~100000
 function bringInPresetForBase(bs) {
-  if (bs >= 20) return { min: 50, max: 250, step: 50 }     // 带入 1000~5000 起
-  if (bs >= 5)  return { min: 100, max: 500, step: 100 }   // 底注5/10 → 带入 500~5000
-  if (bs >= 2)  return { min: 250, max: 1250, step: 250 }  // 底注2 → 带入 500~2500
-  return { min: 500, max: 2500, step: 500 }                // 底注1 → 带入 500~2500
+  if (bs >= 1000) return { min: 20, max: 100, step: 20 }
+  if (bs >= 500)  return { min: 30, max: 150, step: 30 }
+  if (bs >= 200)  return { min: 40, max: 200, step: 40 }
+  if (bs >= 20)   return { min: 50, max: 250, step: 50 }
+  if (bs >= 10)   return { min: 100, max: 500, step: 100 }
+  if (bs >= 5)    return { min: 100, max: 500, step: 100 }
+  if (bs >= 2)    return { min: 250, max: 1250, step: 250 }
+  return { min: 500, max: 2500, step: 500 }
 }
+
+// 实时换算展示：当前带入倍数范围对应的带入金额(分)
+const bringInAmountText = computed(() => {
+  const { baseScore, bringInMultiplierMin: mi, bringInMultiplierMax: ma, bringInMultiplierStep: st } = batch
+  if (!baseScore || !mi || !ma || !st) return ''
+  return `当前=带入 ${baseScore * mi} ~ ${baseScore * ma} 分(步进${baseScore * st})`
+})
 
 function applyBringInPreset(bs) {
   const p = bringInPresetForBase(bs)
@@ -1246,7 +1263,12 @@ function onBaseScoreQuickPick(bs) {
   if (!bs) return
   batch.baseScore = bs
   bringInRangeManuallyEdited.value = false // 快捷选择=明确要推荐值,重置手动标记
+  chipCapAutoFilled.value = true           // 同时恢复封顶自动联动
+  lossCapAutoFilled.value = true
   applyBringInPreset(bs)
+  const p = bringInPresetForBase(bs)
+  const cap = Math.ceil((p.max * 2) / p.step) * p.step // 与 watch 的建议算法一致(上限×2按步长取整)
+  ElMessage.success(`已按底注${bs}匹配：带入倍数 ${p.min}~${p.max} 步长${p.step}（带入 ${bs * p.min}~${bs * p.max} 分），封顶赢/输自动=${cap}`)
 }
 
 // ⭐ 手动改底注数字也自动匹配带入倍数/步长(封顶联动)；手动改过带入范围后就不再覆盖
