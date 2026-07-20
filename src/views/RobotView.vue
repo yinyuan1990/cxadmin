@@ -402,12 +402,13 @@
                 <span class="hint">留空则按「底注×系统最低带入倍数」；填了下面的带入倍数范围时本项被忽略</span>
               </el-form-item>
               <el-form-item label="带入倍数范围">
-                <el-input-number v-model="batch.bringInMultiplierMin" :min="1" :max="100000" placeholder="最小倍数" style="width:110px" />
+                <el-input-number v-model="batch.bringInMultiplierMin" :min="1" :max="100000" placeholder="最小倍数" style="width:110px" @change="onBringInRangeManuallyEdited" />
                 <span style="margin:0 4px">~</span>
-                <el-input-number v-model="batch.bringInMultiplierMax" :min="1" :max="100000" placeholder="最大倍数" style="width:110px" />
+                <el-input-number v-model="batch.bringInMultiplierMax" :min="1" :max="100000" placeholder="最大倍数" style="width:110px" @change="onBringInRangeManuallyEdited" />
                 <span style="margin:0 4px">步长</span>
-                <el-input-number v-model="batch.bringInMultiplierStep" :min="1" :max="100000" placeholder="步长" style="width:100px" />
-                <span class="hint">三项都填才生效：每个机器人坐下各自在[最小,最大]按步长随机抽一个倍数×底注当带入，不再统一一个数字(比如填50/200/50，就在50/100/150/200四个里随机抽)</span>
+                <el-input-number v-model="batch.bringInMultiplierStep" :min="1" :max="100000" placeholder="步长" style="width:100px" @change="onBringInRangeManuallyEdited" />
+                <span class="hint">三项都填才生效：每个机器人坐下各自在[最小,最大]按步长随机抽一个倍数×底注当带入，不再统一一个数字(比如填50/200/50，就在50/100/150/200四个里随机抽)。
+                  <b>改底注(输入或下拉)会自动匹配推荐值</b>(底注≥20→50~250/50；5~10→100~500/100；2→250~1250/250；1→500~2500/500)，手动改过这三项后不再自动覆盖</span>
               </el-form-item>
               <el-form-item label="三花"><el-switch v-model="batch.sanHua" /></el-form-item>
               <el-form-item label="地九王"><el-switch v-model="batch.diWang" /></el-form-item>
@@ -1233,15 +1234,29 @@ function bringInPresetForBase(bs) {
   return { min: 500, max: 2500, step: 500 }                // 底注1 → 带入 500~2500
 }
 
-function onBaseScoreQuickPick(bs) {
-  if (!bs) return
-  batch.baseScore = bs
+function applyBringInPreset(bs) {
   const p = bringInPresetForBase(bs)
   batch.bringInMultiplierMin = p.min
   batch.bringInMultiplierMax = p.max
   batch.bringInMultiplierStep = p.step
-  // 封顶由 watch(bringInMultiplier*) 自动算 = 上限×2
+  // 封顶由 watch(bringInMultiplier*) 自动算 = 上限×2(手动改过封顶的不覆盖)
 }
+
+function onBaseScoreQuickPick(bs) {
+  if (!bs) return
+  batch.baseScore = bs
+  bringInRangeManuallyEdited.value = false // 快捷选择=明确要推荐值,重置手动标记
+  applyBringInPreset(bs)
+}
+
+// ⭐ 手动改底注数字也自动匹配带入倍数/步长(封顶联动)；手动改过带入范围后就不再覆盖
+const bringInRangeManuallyEdited = ref(false)
+function onBringInRangeManuallyEdited() { bringInRangeManuallyEdited.value = true }
+
+watch(() => batch.baseScore, (bs) => {
+  if (!bs || bs <= 0 || bringInRangeManuallyEdited.value) return
+  applyBringInPreset(bs)
+})
 
 async function loadBaseScoreOptions() {
   try {
