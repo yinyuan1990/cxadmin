@@ -472,6 +472,14 @@
                 <el-input-number v-model="batch.viewerSeatFullCount" :min="0" :max="10000" placeholder="默认值" />
                 <span class="hint">本桌覆盖俱乐部的"满座围观人数"：坐满(=开局人数)时该组件等于此值，在座减少按 e 曲线快速衰减到 0；最终围观目标=50%×原有算法+50%×此组件。不填=用俱乐部默认值；填0=本桌明确关闭该组件</span>
               </el-form-item>
+              <el-form-item label="满座围观24小时表">
+                <el-input v-model="batch.viewerFullHourJson" style="width:520px" placeholder="留空=用俱乐部配置的表" />
+                <el-button size="small" type="primary" text @click="batch.viewerFullHourJson = VIEWER_FULL_HOUR_RECOMMENDED">填入推荐值</el-button>
+                <el-button size="small" type="warning" text @click="fillNoisyViewerFullHourBatch">加噪音生成</el-button>
+                <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增</el-tag>
+                <span class="hint"><b>本桌覆盖</b>俱乐部的"满座围观24小时表"（JSON数组24项，每项0~500，坐满8人后该小时围观人数以此为目标）。
+                  留空=用俱乐部配置。<b>建多张桌时点"加噪音生成"</b>可让每张桌的围观曲线都不一样，避免各桌各时段围观人数一模一样</span>
+              </el-form-item>
               <el-divider content-position="left">盈利控盘（真人进来时按目标放水/吃分）</el-divider>
               <el-form-item label="开启控盘"><el-switch v-model="batch.profitControlEnabled" /></el-form-item>
               <el-form-item label="目标模式">
@@ -1224,6 +1232,7 @@ const batch = reactive({
   periodWinStandUpProb: 50, periodLoseStandUpProb: 50, allRobotWinRatePercent: 30,
   viewerAudienceMultiplierMin: null, viewerAudienceMultiplierMax: null,
   chipCapMultiplier: 500, lossCapMultiplier: 500, minSeatedRobots: null, viewerSeatFullCount: null,
+  viewerFullHourJson: '', // ⭐ 满座围观24小时表建桌级覆盖：留空=用俱乐部配置
   profitControlEnabled: true, profitMode: 'absolute', targetProfit: 0, targetProfitRate: -0.05, perHandCap: 0, adjustStrength: 0.5
 })
 
@@ -1307,15 +1316,24 @@ const lastBatchTip = ref('—')
 const VIEWER_FULL_HOUR_RECOMMENDED = '[60,45,30,20,15,10,10,15,20,25,30,35,40,35,35,40,45,50,60,70,80,90,85,70]'
 
 // ⭐ 加噪音生成：以推荐曲线为基础，每小时值随机浮动±25%(下限5、上限500)，每点一次出一套不同的配置——
-//   多个俱乐部都用同一条推荐曲线的话，每个时段围观数一模一样，明显是程序配的；加噪音后各俱乐部错开。
-function fillNoisyViewerFullHour() {
+//   多个俱乐部/多张桌都用同一条推荐曲线的话，每个时段围观数一模一样，明显是程序配的；加噪音后各自错开。
+function noisyViewerFullHour() {
   const base = JSON.parse(VIEWER_FULL_HOUR_RECOMMENDED)
   const arr = base.map(v => {
     const factor = 0.75 + Math.random() * 0.5 // 0.75~1.25
     return Math.max(5, Math.min(500, Math.round(v * factor)))
   })
-  config.viewerFullHourJson = JSON.stringify(arr)
+  return JSON.stringify(arr)
+}
+
+function fillNoisyViewerFullHour() {
+  config.viewerFullHourJson = noisyViewerFullHour()
   ElMessage.success('已生成带随机噪音的24小时表(推荐值±25%)，每次点击结果都不同，记得保存')
+}
+
+function fillNoisyViewerFullHourBatch() {
+  batch.viewerFullHourJson = noisyViewerFullHour()
+  ElMessage.success('已为本批建桌生成带随机噪音的24小时表(推荐值±25%)，每次点击结果都不同')
 }
 
 // ⭐ 2026-07-20 初始即视为"自动填的值"(默认带入250×2=封顶500已对应)，改带入范围会继续联动；手动改过封顶才停
