@@ -719,6 +719,8 @@
                           placeholder="留空=满座沿用档位默认7~10" />
                 <el-button size="small" type="primary" text :disabled="!config.viewerSeatBandEnabled"
                            @click="config.viewerFullHourJson = VIEWER_FULL_HOUR_RECOMMENDED">填入推荐值</el-button>
+                <el-button size="small" type="warning" text :disabled="!config.viewerSeatBandEnabled"
+                           @click="fillNoisyViewerFullHour">加噪音生成</el-button>
                 <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增</el-tag>
                 <span class="hint">JSON数组24项，下标=小时(0~23点)，每项0~500。<b>只在坐满8人后生效</b>：该小时的围观人数以表里的值为目标
                   (渐进增减到位，到位后每<b>30秒</b>先进先出流动1人)。在座&lt;8 时仍走上面的固定档位，不受此表影响。
@@ -1303,6 +1305,18 @@ const lastBatchTip = ref('—')
 //   本人带入×1.2"的兜底，建议值偏低也不会出现带入大于封顶、一坐下就被踢的问题。
 // ⭐ 满座围观24小时表推荐默认值：凌晨低谷(4~6点约10~15人)、白天渐升、晚20~22点高峰(80~90人)
 const VIEWER_FULL_HOUR_RECOMMENDED = '[60,45,30,20,15,10,10,15,20,25,30,35,40,35,35,40,45,50,60,70,80,90,85,70]'
+
+// ⭐ 加噪音生成：以推荐曲线为基础，每小时值随机浮动±25%(下限5、上限500)，每点一次出一套不同的配置——
+//   多个俱乐部都用同一条推荐曲线的话，每个时段围观数一模一样，明显是程序配的；加噪音后各俱乐部错开。
+function fillNoisyViewerFullHour() {
+  const base = JSON.parse(VIEWER_FULL_HOUR_RECOMMENDED)
+  const arr = base.map(v => {
+    const factor = 0.75 + Math.random() * 0.5 // 0.75~1.25
+    return Math.max(5, Math.min(500, Math.round(v * factor)))
+  })
+  config.viewerFullHourJson = JSON.stringify(arr)
+  ElMessage.success('已生成带随机噪音的24小时表(推荐值±25%)，每次点击结果都不同，记得保存')
+}
 
 // ⭐ 2026-07-20 初始即视为"自动填的值"(默认带入250×2=封顶500已对应)，改带入范围会继续联动；手动改过封顶才停
 const chipCapAutoFilled = ref(true)
