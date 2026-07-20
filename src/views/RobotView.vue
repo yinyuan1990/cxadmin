@@ -705,11 +705,15 @@
               </el-form-item>
               <el-form-item label="满座围观24小时表">
                 <el-input v-model="config.viewerFullHourJson" style="width:520px" :disabled="!config.viewerSeatBandEnabled"
-                          placeholder="留空=满座沿用档位默认7~10，示例 [30,20,15,10,8,8,10,15,20,25,30,35,40,40,45,50,55,60,70,80,90,90,80,50]" />
+                          placeholder="留空=满座沿用档位默认7~10" />
+                <el-button size="small" type="primary" text :disabled="!config.viewerSeatBandEnabled"
+                           @click="config.viewerFullHourJson = VIEWER_FULL_HOUR_RECOMMENDED">填入推荐值</el-button>
                 <el-tag size="small" type="danger" effect="dark" style="margin-left:6px">新增</el-tag>
                 <span class="hint">JSON数组24项，下标=小时(0~23点)，每项0~500。<b>只在坐满8人后生效</b>：该小时的围观人数以表里的值为目标
                   (渐进增减到位，到位后每<b>30秒</b>先进先出流动1人)。在座&lt;8 时仍走上面的固定档位，不受此表影响。
-                  留空=满座沿用7~10档位。需要"围观档位模式"开启</span>
+                  留空=满座沿用7~10档位。需要"围观档位模式"开启。<br />
+                  <b>推荐默认配置</b>(凌晨低谷、晚20~22点高峰，可直接复制或点上面按钮填入)：<br />
+                  <code style="user-select:all">[60,45,30,20,15,10,10,15,20,25,30,35,40,35,35,40,45,50,60,70,80,90,85,70]</code></span>
               </el-form-item>
 
               <el-divider content-position="left">辅助参数</el-divider>
@@ -1215,6 +1219,9 @@ const lastBatchTip = ref('—')
 //   2026-07-18 ×5→×2：×5 是封顶功能刚加时的老规则(250×5=1250,封顶12.5万)，实测赢家滚到12万+才被踢，
 //   战绩榜观感就是"一个人赢很多"；改为"最大带入翻倍即落袋"(250×2=500)，配合后端"生效封顶不低于
 //   本人带入×1.2"的兜底，建议值偏低也不会出现带入大于封顶、一坐下就被踢的问题。
+// ⭐ 满座围观24小时表推荐默认值：凌晨低谷(4~6点约10~15人)、白天渐升、晚20~22点高峰(80~90人)
+const VIEWER_FULL_HOUR_RECOMMENDED = '[60,45,30,20,15,10,10,15,20,25,30,35,40,35,35,40,45,50,60,70,80,90,85,70]'
+
 const chipCapAutoFilled = ref(false)
 // ⭐ 2026-07-19 亏损封顶(输家侧)跟筹码封顶用同一个建议值(=带入倍数上限×2)，各自独立记录"是否手动改过"
 const lossCapAutoFilled = ref(false)
