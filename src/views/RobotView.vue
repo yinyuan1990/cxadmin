@@ -386,7 +386,14 @@
                 <span class="hint">5~7 个</span>
               </el-form-item>
               <el-form-item label="开局人数"><el-input-number v-model="batch.playerCount" :min="2" :max="8" /></el-form-item>
-              <el-form-item label="底注"><el-input-number v-model="batch.baseScore" :min="1" :max="100000" /></el-form-item>
+              <el-form-item label="底注">
+                <el-input-number v-model="batch.baseScore" :min="1" :max="100000" style="width:120px" />
+                <el-select v-model="quickBaseScore" placeholder="快捷选择" clearable style="width:120px;margin-left:6px"
+                           @change="onBaseScoreQuickPick">
+                  <el-option v-for="bs in baseScoreOptions" :key="bs" :label="'底注 ' + bs" :value="bs" />
+                </el-select>
+                <span class="hint">下拉=系统「可选底注」列表，选中后自动匹配下面的带入倍数/步长(封顶也会联动算出)</span>
+              </el-form-item>
               <el-form-item label="芒果封顶"><el-input-number v-model="batch.mangoMax" :min="1" :max="999" /></el-form-item>
               <el-form-item label="结算(分钟)"><el-input-number v-model="batch.settleTime" :min="1" :max="1440" /></el-form-item>
               <el-form-item label="点位"><el-input-number v-model="batch.commissionRate" :min="0" :max="10" /></el-form-item>
@@ -983,7 +990,7 @@ import {
   addRobotViewers, clearRobotViewers, cleanPhantomRobotViewers, adjustRobotViewers, assignAvatarsFromFolder,
   getClubProfit, getProfitTables, getProfitHistory, clearProfitHistory,
   setClubGameDisabled, getRobotRoomParams,
-  getHolidayViewerConfig, setHolidayViewerConfig
+  getHolidayViewerConfig, setHolidayViewerConfig, getAllConfigs
 } from '../api'
 
 const loading = ref(false)
@@ -1199,18 +1206,56 @@ const topup = reactive({ amount: 100000, mode: 'add' })
 const topupLoading = ref(false)
 const renameLoading = ref(false)
 
+// ⭐ 2026-07-20 批量建桌默认值定版（产品口径）：1张桌/8机器人/2人即开局/底注100/带入50~250步长50、
+//   三花+地九王+奖池+排队(2人)默认开、周期站起50/50、赢家比例30、封顶赢输500/500(=带入上限×2)、
+//   控盘默认开(绝对分,目标0=机器人对真人不输不赢)
 const batch = reactive({
-  tableCount: 10, perTable: 6, playerCount: 6, baseScore: 10, mangoMax: 5,
-  settleTime: 30, commissionRate: 5, bringIn: 0, sanHua: true, diWang: false, noScore: false, dingErHuangFeast: false, gps: false,
-  bonusPool: false, queue: false, queuePlayerCount: 6,
+  tableCount: 1, perTable: 8, playerCount: 2, baseScore: 100, mangoMax: 5,
+  settleTime: 30, commissionRate: 5, bringIn: 0, sanHua: true, diWang: true, noScore: false, dingErHuangFeast: false, gps: false,
+  bonusPool: true, queue: true, queuePlayerCount: 2,
   // ⭐ 带入倍数范围：三个都填才生效，每个机器人坐下各自随机抽一个倍数×底注，不再统一用上面的"带入"
-  bringInMultiplierMin: null, bringInMultiplierMax: null, bringInMultiplierStep: null,
-  // 拟真：周期结束站起/离桌 + 全机器人桌赢家比例 + 围观基数倍数，null=不覆盖，用俱乐部默认值
-  periodWinStandUpProb: null, periodLoseStandUpProb: null, allRobotWinRatePercent: null,
+  bringInMultiplierMin: 50, bringInMultiplierMax: 250, bringInMultiplierStep: 50,
+  periodWinStandUpProb: 50, periodLoseStandUpProb: 50, allRobotWinRatePercent: 30,
   viewerAudienceMultiplierMin: null, viewerAudienceMultiplierMax: null,
-  chipCapMultiplier: null, lossCapMultiplier: null, minSeatedRobots: null, viewerSeatFullCount: null,
-  profitControlEnabled: false, profitMode: 'rate', targetProfit: 0, targetProfitRate: -0.05, perHandCap: 0, adjustStrength: 0.5
+  chipCapMultiplier: 500, lossCapMultiplier: 500, minSeatedRobots: null, viewerSeatFullCount: null,
+  profitControlEnabled: true, profitMode: 'absolute', targetProfit: 0, targetProfitRate: -0.05, perHandCap: 0, adjustStrength: 0.5
 })
+
+// ⭐ 底注快捷下拉：选项来自系统配置「可选底注」available_base_scores(加载失败用内置兜底)，
+//   选中后自动匹配带入倍数/步长(小底注抬高倍数保证带入金额量级合理)，封顶随 watch 联动=带入上限×2
+const baseScoreOptions = ref([1, 2, 5, 10, 20, 50, 100])
+const quickBaseScore = ref(null)
+
+function bringInPresetForBase(bs) {
+  if (bs >= 20) return { min: 50, max: 250, step: 50 }     // 带入 1000~5000 起
+  if (bs >= 5)  return { min: 100, max: 500, step: 100 }   // 底注5/10 → 带入 500~5000
+  if (bs >= 2)  return { min: 250, max: 1250, step: 250 }  // 底注2 → 带入 500~2500
+  return { min: 500, max: 2500, step: 500 }                // 底注1 → 带入 500~2500
+}
+
+function onBaseScoreQuickPick(bs) {
+  if (!bs) return
+  batch.baseScore = bs
+  const p = bringInPresetForBase(bs)
+  batch.bringInMultiplierMin = p.min
+  batch.bringInMultiplierMax = p.max
+  batch.bringInMultiplierStep = p.step
+  // 封顶由 watch(bringInMultiplier*) 自动算 = 上限×2
+}
+
+async function loadBaseScoreOptions() {
+  try {
+    const res = await getAllConfigs()
+    if (res.code === 200 && Array.isArray(res.data)) {
+      const item = res.data.find(c => c.configKey === 'available_base_scores')
+      if (item && item.configValue) {
+        const list = String(item.configValue).split(',')
+          .map(s => Number(String(s).trim())).filter(n => Number.isFinite(n) && n > 0)
+        if (list.length > 0) baseScoreOptions.value = list
+      }
+    }
+  } catch { /* 用内置兜底 */ }
+}
 const batchLoading = ref(false)
 const lastBatchTip = ref('—')
 
@@ -1222,9 +1267,10 @@ const lastBatchTip = ref('—')
 // ⭐ 满座围观24小时表推荐默认值：凌晨低谷(4~6点约10~15人)、白天渐升、晚20~22点高峰(80~90人)
 const VIEWER_FULL_HOUR_RECOMMENDED = '[60,45,30,20,15,10,10,15,20,25,30,35,40,35,35,40,45,50,60,70,80,90,85,70]'
 
-const chipCapAutoFilled = ref(false)
+// ⭐ 2026-07-20 初始即视为"自动填的值"(默认带入250×2=封顶500已对应)，改带入范围会继续联动；手动改过封顶才停
+const chipCapAutoFilled = ref(true)
 // ⭐ 2026-07-19 亏损封顶(输家侧)跟筹码封顶用同一个建议值(=带入倍数上限×2)，各自独立记录"是否手动改过"
-const lossCapAutoFilled = ref(false)
+const lossCapAutoFilled = ref(true)
 
 function computeSuggestedChipCap() {
   const max = batch.bringInMultiplierMax
@@ -1860,6 +1906,7 @@ async function loadTables() {
 onMounted(() => {
   loadStatus()
   loadClubs()
+  loadBaseScoreOptions() // ⭐ 底注快捷下拉：拉系统「可选底注」列表
 })
 </script>
 
